@@ -129,6 +129,20 @@ describe('MemoryStore', () => {
         expect(() => store.proposeMemory({ scope: 'user', content: 'A memory', importance: 6 })).toThrow(/importance/);
     });
 
+    test('searches CJK memories by substring, including short queries', async () => {
+        const store = await createMemoryStore();
+        const proposal = store.proposeMemory({
+            scope: 'user',
+            content: '前に行った喫茶店は渋谷にある。',
+            kind: 'event',
+        });
+        store.reviewProposal(proposal.id, 'approve');
+
+        expect(store.searchMemories({ query: '喫茶店', scope: 'user' })).toHaveLength(1);
+        expect(store.searchMemories({ query: '前に行った', scope: 'user' })).toHaveLength(1);
+        expect(store.searchMemories({ query: '渋谷', scope: 'user' })).toHaveLength(1);
+    });
+
     test('handles punctuation-only searches without malformed FTS queries', async () => {
         const store = await createMemoryStore();
         expect(store.searchMemories({ query: '!!! ???', scope: 'user' })).toEqual([]);
