@@ -18,9 +18,9 @@ const DICE_SCHEMA = {
  * @returns {import('./tool-registry.js').ToolRegistry} The registry.
  */
 export function registerBuiltinTools(registry = toolRegistry) {
-    if (!registry.hasTool('roleplay.roll_dice')) {
+    if (!registry.hasTool('roleplay_roll_dice')) {
         registry.registerTool({
-            name: 'roleplay.roll_dice',
+            name: 'roleplay_roll_dice',
             description: 'Roll one or more fair dice for a roleplay or tabletop scene. Returns each roll and the total.',
             toolset: 'roleplay',
             permission: 'read',

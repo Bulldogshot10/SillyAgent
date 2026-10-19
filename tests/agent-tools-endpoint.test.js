@@ -32,14 +32,14 @@ describe('agent tools API', () => {
         const body = await response.json();
 
         expect(response.status).toBe(200);
-        expect(body.tools.some(tool => tool.function.name === 'roleplay.roll_dice')).toBe(true);
+        expect(body.tools.some(tool => tool.function.name === 'roleplay_roll_dice')).toBe(true);
     });
 
     test('executes a valid built-in tool request', async () => {
         const response = await fetch(`${baseUrl}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: 'roleplay.roll_dice', arguments: { count: 2, sides: 20 } }),
+            body: JSON.stringify({ name: 'roleplay_roll_dice', arguments: { count: 2, sides: 20 } }),
         });
         const body = await response.json();
 
@@ -52,7 +52,7 @@ describe('agent tools API', () => {
         const invalid = await fetch(`${baseUrl}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: 'roleplay.roll_dice', arguments: { count: 0, sides: 20 } }),
+            body: JSON.stringify({ name: 'roleplay_roll_dice', arguments: { count: 0, sides: 20 } }),
         });
         expect(invalid.status).toBe(400);
 
@@ -68,7 +68,7 @@ describe('agent tools API', () => {
         const response = await fetch(`${baseUrl}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: 'roleplay.roll_dice', arguments: { count: 1, sides: 6, extra: 'x'.repeat(20 * 1024) } }),
+            body: JSON.stringify({ name: 'roleplay_roll_dice', arguments: { count: 1, sides: 6, extra: 'x'.repeat(20 * 1024) } }),
         });
         expect(response.status).toBe(413);
     });

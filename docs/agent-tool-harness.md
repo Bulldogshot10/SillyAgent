@@ -7,13 +7,13 @@ This document describes the first server-side slice of the built-in tool harness
 The API is mounted under `/api/agent/tools`.
 
 - `GET /api/agent/tools` returns enabled roleplay tools in OpenAI-compatible function-calling format.
-- `POST /api/agent/tools/execute` executes a registered roleplay tool. The JSON request shape is `{"name":"roleplay.roll_dice","arguments":{"count":2,"sides":20}}`.
+- `POST /api/agent/tools/execute` executes a registered roleplay tool. The JSON request shape is `{"name":"roleplay_roll_dice","arguments":{"count":2,"sides":20}}`.
 
 The execute endpoint only allows the `roleplay` toolset. Tool inputs are checked against their registered schema. Requests are limited to 16 KiB; serialized tool results are limited to 32 KiB; each tool has a bounded timeout.
 
 ## Built-in tool
 
-### `roleplay.roll_dice`
+### `roleplay_roll_dice`
 
 Inputs:
 - `count`: integer from 1 through 20.

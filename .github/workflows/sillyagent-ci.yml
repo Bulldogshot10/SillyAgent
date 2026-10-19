@@ -38,6 +38,7 @@ jobs:
           src/agent/builtin-tools.js
           src/endpoints/agent-tools.js
           src/server-startup.js
+          public/scripts/tool-calling.js
 
       - name: Lint test files
         run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js

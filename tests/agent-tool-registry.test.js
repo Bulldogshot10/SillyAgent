@@ -145,11 +145,11 @@ describe('ToolRegistry', () => {
         const registry = new ToolRegistry();
         registerBuiltinTools(registry);
 
-        const result = await registry.executeTool('roleplay.roll_dice', { count: 4, sides: 6 });
+        const result = await registry.executeTool('roleplay_roll_dice', { count: 4, sides: 6 });
         expect(result.ok).toBe(true);
         expect(result.result.rolls).toHaveLength(4);
         expect(result.result.rolls.every(roll => roll >= 1 && roll <= 6)).toBe(true);
         expect(result.result.total).toBe(result.result.rolls.reduce((sum, roll) => sum + roll, 0));
-        expect((await registry.executeTool('roleplay.roll_dice', { count: 21, sides: 6 })).error.code).toBe('invalid_input');
+        expect((await registry.executeTool('roleplay_roll_dice', { count: 21, sides: 6 })).error.code).toBe('invalid_input');
     });
 });

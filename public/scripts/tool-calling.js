@@ -1,6 +1,6 @@
 import { DOMPurify } from '../lib.js';
 
-import { addOneMessage, chat, event_types, eventSource, getGeneratingApi, getGeneratingModel, main_api, saveChatConditional, system_avatar, systemUserName } from '../script.js';
+import { addOneMessage, chat, event_types, eventSource, getGeneratingApi, getGeneratingModel, getRequestHeaders, main_api, saveChatConditional, system_avatar, systemUserName } from '../script.js';
 import { chat_completion_sources, custom_prompt_post_processing_types, getChatCompletionModel, model_list, oai_settings } from './openai.js';
 import { Popup } from './popup.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
@@ -246,6 +246,9 @@ export class ToolManager {
      */
     static #tools = new Map();
 
+    /** @type {Map<string, string>} Names and signatures of tools imported from the SillyAgent server. */
+    static #serverTools = new Map();
+
     static #INPUT_DELTA_KEY = '__input_json_delta';
 
     /**
@@ -394,10 +397,101 @@ export class ToolManager {
     }
 
     /**
+     * Refresh built-in tools exposed by the SillyAgent server.
+     * Server-side handlers remain on the server; the browser only receives schemas and calls the execution endpoint.
+     * @returns {Promise<void>}
+     */
+    static async #registerServerTools() {
+        let response;
+        let payload;
+
+        try {
+            response = await fetch('/api/agent/tools', { headers: getRequestHeaders() });
+            if (!response.ok) {
+                console.debug('[ToolManager] Built-in server tools are unavailable:', response.status);
+                return;
+            }
+            payload = await response.json();
+        } catch (error) {
+            console.debug('[ToolManager] Could not load built-in server tools:', error);
+            return;
+        }
+
+        if (!Array.isArray(payload?.tools)) {
+            return;
+        }
+
+        const discovered = new Set();
+        for (const candidate of payload.tools) {
+            const definition = candidate?.function;
+            if (candidate?.type !== 'function'
+                || typeof definition?.name !== 'string'
+                || !/^[a-zA-Z0-9_-]{1,64}$/.test(definition.name)
+                || typeof definition.description !== 'string'
+                || !definition.parameters
+                || typeof definition.parameters !== 'object'
+                || Array.isArray(definition.parameters)) {
+                continue;
+            }
+
+            // Keep server tools in a reserved namespace so they cannot overwrite user-registered tools.
+            const localName = `sillyagent_${definition.name}`;
+            const signature = JSON.stringify({
+                name: definition.name,
+                description: definition.description,
+                parameters: definition.parameters,
+            });
+            discovered.add(localName);
+
+            const previousSignature = this.#serverTools.get(localName);
+            if (previousSignature === signature && this.#tools.has(localName)) {
+                continue;
+            }
+            if (!previousSignature && this.#tools.has(localName)) {
+                console.warn(`[ToolManager] Skipping server tool "${definition.name}" because "${localName}" is already registered locally.`);
+                continue;
+            }
+
+            this.#tools.delete(localName);
+            const serverToolName = definition.name;
+            this.registerFunctionTool({
+                name: localName,
+                displayName: `SillyAgent: ${serverToolName}`,
+                description: definition.description,
+                parameters: definition.parameters,
+                action: async parameters => {
+                    const executionResponse = await fetch('/api/agent/tools/execute', {
+                        method: 'POST',
+                        headers: getRequestHeaders(),
+                        body: JSON.stringify({
+                            name: serverToolName,
+                            arguments: parameters,
+                        }),
+                    });
+                    const execution = await executionResponse.json().catch(() => null);
+                    if (!executionResponse.ok || !execution?.ok) {
+                        throw new Error(execution?.error?.message || `Tool execution failed (HTTP ${executionResponse.status}).`);
+                    }
+                    return execution.result;
+                },
+            });
+            this.#serverTools.set(localName, signature);
+        }
+
+        for (const localName of this.#serverTools.keys()) {
+            if (!discovered.has(localName)) {
+                this.unregisterFunctionTool(localName);
+                this.#serverTools.delete(localName);
+            }
+        }
+    }
+
+    /**
      * Register function tools for the next chat completion request.
      * @param {object} data Generation data
      */
     static async registerFunctionToolsOpenAI(data) {
+        await this.#registerServerTools();
         const tools = [];
 
         for (const tool of ToolManager.tools) {
