@@ -88,13 +88,15 @@ function toProposal(row) {
     } : null;
 }
 
-function buildMatchExpression(query) {
-    const tokens = query.match(/[\p{L}\p{N}]+/gu) ?? [];
-    return [...new Set(tokens.map(token => token.toLowerCase()))]
-        .slice(0, 16)
-        .map(token => '"' + token.replaceAll('"', '""') + '"')
-        .join(' OR ');
+function getSearchTokens(query) {
+    return [...new Set((query.match(/[\p{L}\p{N}]+/gu) ?? []).map(token => token.toLowerCase()))].slice(0, 16);
 }
+
+function buildMatchExpression(tokens) {
+    return tokens.map(token => '"' + token.replaceAll('"', '""') + '"').join(' OR ');
+}
+
+const CJK_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
 /**
  * Per-user persistent memory using Node's built-in SQLite and FTS5.
@@ -167,6 +169,16 @@ export class MemoryStore {
             'CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(' +
             'memory_id UNINDEXED, scope UNINDEXED, scope_id UNINDEXED, content, ' +
             'tokenize = \'unicode61 remove_diacritics 2\');',
+        );
+        this.#db.exec(
+            'CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts_trigram USING fts5(' +
+            'memory_id UNINDEXED, scope UNINDEXED, scope_id UNINDEXED, content, ' +
+            'tokenize = \'trigram\');',
+        );
+        this.#db.exec(
+            'INSERT INTO memory_fts_trigram(memory_id, scope, scope_id, content) ' +
+            'SELECT m.id, m.scope, m.scope_id, m.content FROM memories m ' +
+            'WHERE NOT EXISTS (SELECT 1 FROM memory_fts_trigram f WHERE f.memory_id = m.id);',
         );
     }
 
@@ -293,6 +305,10 @@ export class MemoryStore {
                 this.#db.prepare(
                     'INSERT INTO memory_fts(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
                 ).run(memoryRow.id, memoryRow.scope, memoryRow.scope_id, memoryRow.content);
+                this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(memoryRow.id);
+                this.#db.prepare(
+                    'INSERT INTO memory_fts_trigram(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
+                ).run(memoryRow.id, memoryRow.scope, memoryRow.scope_id, memoryRow.content);
                 memory = toMemory(memoryRow);
             }
 
@@ -317,48 +333,68 @@ export class MemoryStore {
      */
     searchMemories({ query, scope = 'relevant', activeChatId = null, activeCharacterId = null, limit = 5 }) {
         const text = normalizeText(query, 300, 'Search query');
-        const matchExpression = buildMatchExpression(text);
-        if (!matchExpression) return [];
+        const tokens = getSearchTokens(text);
+        if (!tokens.length) return [];
+        const matchExpression = buildMatchExpression(tokens);
+        const trigramTokens = tokens.filter(token => Array.from(token).length >= 3);
+        const trigramExpression = buildMatchExpression(trigramTokens);
+        const shortCjkTokens = tokens.filter(token => Array.from(token).length < 3 && CJK_PATTERN.test(token));
         if (!['relevant', 'user', 'character', 'chat'].includes(scope)) {
             throw new TypeError('Search scope must be relevant, user, character, or chat.');
         }
 
         const safeLimit = Math.max(1, Math.min(5, Number.isInteger(limit) ? limit : 5));
         const conditions = [];
-        const params = [matchExpression];
+        const scopeParams = [];
 
         if (scope === 'user') {
-            conditions.push('m.scope = \'user\'');
+            conditions.push("m.scope = 'user'");
         } else if (scope === 'chat') {
             if (typeof activeChatId !== 'string' || !activeChatId) return [];
-            conditions.push('m.scope = \'chat\' AND m.scope_id = ?');
-            params.push(activeChatId);
+            conditions.push("m.scope = 'chat' AND m.scope_id = ?");
+            scopeParams.push(activeChatId);
         } else if (scope === 'character') {
             if (typeof activeCharacterId !== 'string' || !activeCharacterId) return [];
-            conditions.push('m.scope = \'character\' AND m.scope_id = ?');
-            params.push(activeCharacterId);
+            conditions.push("m.scope = 'character' AND m.scope_id = ?");
+            scopeParams.push(activeCharacterId);
         } else {
-            conditions.push('m.scope = \'user\'');
+            conditions.push("m.scope = 'user'");
             if (typeof activeChatId === 'string' && activeChatId) {
-                conditions.push('(m.scope = \'chat\' AND m.scope_id = ?)');
-                params.push(activeChatId);
+                conditions.push("(m.scope = 'chat' AND m.scope_id = ?)");
+                scopeParams.push(activeChatId);
             }
             if (typeof activeCharacterId === 'string' && activeCharacterId) {
-                conditions.push('(m.scope = \'character\' AND m.scope_id = ?)');
-                params.push(activeCharacterId);
+                conditions.push("(m.scope = 'character' AND m.scope_id = ?)");
+                scopeParams.push(activeCharacterId);
             }
         }
 
-        params.push(safeLimit);
-        const sql = 'SELECT m.* FROM memory_fts INNER JOIN memories m ON m.id = memory_fts.memory_id ' +
-            'WHERE memory_fts MATCH ? AND (' + conditions.join(' OR ') + ') ' +
-            'ORDER BY bm25(memory_fts) ASC, m.importance DESC, m.updated_at DESC LIMIT ?';
-        return this.#db.prepare(sql).all(...params).map(row => ({
+        const matchQueries = [
+            'SELECT memory_id, bm25(memory_fts) AS rank FROM memory_fts WHERE memory_fts MATCH ?',
+        ];
+        const matchParams = [matchExpression];
+        if (trigramExpression) {
+            matchQueries.push('SELECT memory_id, bm25(memory_fts_trigram) AS rank FROM memory_fts_trigram WHERE memory_fts_trigram MATCH ?');
+            matchParams.push(trigramExpression);
+        }
+        if (shortCjkTokens.length) {
+            matchQueries.push(
+                'SELECT m.id AS memory_id, 0 AS rank FROM memories m WHERE (' +
+                shortCjkTokens.map(() => 'm.content LIKE ?').join(' OR ') + ')',
+            );
+            matchParams.push(...shortCjkTokens.map(token => '%' + token + '%'));
+        }
+
+        const sql = 'WITH matches AS (' + matchQueries.join(' UNION ALL ') + ') ' +
+            'SELECT m.* FROM memories m ' +
+            'INNER JOIN (SELECT memory_id, MIN(rank) AS rank FROM matches GROUP BY memory_id) ranked ON ranked.memory_id = m.id ' +
+            'WHERE (' + conditions.join(' OR ') + ') ' +
+            'ORDER BY ranked.rank ASC, m.importance DESC, m.updated_at DESC LIMIT ?';
+        return this.#db.prepare(sql).all(...matchParams, ...scopeParams, safeLimit).map(row => ({
             ...toMemory(row),
             preview: row.content.length > 400 ? row.content.slice(0, 397) + '...' : row.content,
         }));
     }
-
     getSummary() {
         return {
             events: this.#db.prepare('SELECT COUNT(*) AS count FROM memory_events').get().count,
