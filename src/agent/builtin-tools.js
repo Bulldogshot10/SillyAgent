@@ -77,7 +77,14 @@ export function registerBuiltinTools(registry = toolRegistry) {
                     activeChatId: context.activeChatId,
                     activeCharacterId: context.activeCharacterId,
                     limit: input.limit ?? 5,
-                }),
+                }).map(({ scope, kind, content, importance }) => ({
+                    scope,
+                    kind,
+                    importance,
+                    content: Array.from(content).length > 800
+                        ? Array.from(content).slice(0, 797).join('') + '...'
+                        : content,
+                })),
             }),
         });
     }
