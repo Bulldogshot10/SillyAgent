@@ -43,6 +43,7 @@ router.post('/execute', async (request, response) => {
     }
 
     const result = await toolRegistry.executeTool(body.name, body.arguments, {
+        allowedToolsets: ['roleplay'],
         context: { source: 'agent-tools-api' },
     });
 
