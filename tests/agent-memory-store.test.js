@@ -178,6 +178,26 @@ describe('MemoryStore', () => {
         expect(store.clearCapturedTurns('chat-1')).toBe(1);
         expect(store.countCapturedTurns('chat-1')).toBe(0);
         expect(store.listEvents({ scope: 'chat', scopeId: 'chat-1', eventTypes: ['chat.user_turn'] })).toHaveLength(0);
+
+        const memoryProposal = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'chat-1',
+            content: 'The silver key remains important to the story.',
+            kind: 'world_state',
+        });
+        store.reviewProposal(memoryProposal.id, 'approve');
+        store.captureTurn({
+            scopeId: 'chat-1',
+            role: 'assistant',
+            content: 'This new captured turn should also be removed.',
+            captureKey: 'message-2',
+        });
+        expect(store.clearCapturedTurns('chat-1')).toBe(1);
+        expect(store.searchMemories({
+            query: 'silver key',
+            scope: 'chat',
+            activeChatId: 'chat-1',
+        }).some(memory => memory.content === 'The silver key remains important to the story.')).toBe(true);
     });
 
     test('lists and deletes accepted memories from both search indexes', async () => {
