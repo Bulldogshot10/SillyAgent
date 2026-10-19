@@ -185,4 +185,80 @@ describe('agent tools API', () => {
         });
         expect(response.status).toBe(400);
     });
+    test('manages opt-in settings and deduplicates captured chat turns', async () => {
+        const initialResponse = await fetch(baseUrl + '/memory/settings');
+        const initial = await initialResponse.json();
+        expect(initial.settings.autoRetrieveEnabled).toBe(true);
+        expect(initial.settings.autoCaptureEnabled).toBe(false);
+
+        const settingsResponse = await fetch(baseUrl + '/memory/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ autoCaptureEnabled: true, autoDreamEnabled: true }),
+        });
+        const settings = await settingsResponse.json();
+        expect(settingsResponse.status).toBe(200);
+        expect(settings.settings.autoCaptureEnabled).toBe(true);
+
+        const captureBody = {
+            activeChatId: 'dream-test-chat',
+            activeCharacterId: 'julia-card.png',
+            role: 'user',
+            content: 'We keep returning to the silver key mystery.',
+            messageKey: '12:user',
+        };
+        const firstResponse = await fetch(baseUrl + '/capture-turn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(captureBody),
+        });
+        const first = await firstResponse.json();
+        const duplicateResponse = await fetch(baseUrl + '/capture-turn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(captureBody),
+        });
+        const duplicate = await duplicateResponse.json();
+        expect(first.captured).toBe(true);
+        expect(first.duplicate).toBe(false);
+        expect(duplicate.duplicate).toBe(true);
+
+        const dreamResponse = await fetch(baseUrl + '/dream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ activeChatId: 'dream-test-chat' }),
+        });
+        expect(dreamResponse.status).toBe(200);
+        expect((await dreamResponse.json()).eventsReviewed).toBe(1);
+    });
+
+    test('lists and deletes approved memories through the memory API', async () => {
+        const proposalResponse = await fetch(baseUrl + '/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: 'memory_propose',
+                arguments: { content: 'A brass telescope belongs in the attic.', scope: 'user', kind: 'fact' },
+            }),
+        });
+        const proposed = await proposalResponse.json();
+        const reviewResponse = await fetch(baseUrl + '/memory/proposals/' + proposed.result.proposal.id + '/review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision: 'approve' }),
+        });
+        expect(reviewResponse.status).toBe(200);
+
+        const listResponse = await fetch(baseUrl + '/memory/list?scope=user');
+        const listed = await listResponse.json();
+        const memory = listed.memories.find(item => item.content === 'A brass telescope belongs in the attic.');
+        expect(memory).toBeDefined();
+
+        const deleteResponse = await fetch(baseUrl + '/memory/' + memory.id, { method: 'DELETE' });
+        expect(deleteResponse.status).toBe(200);
+        const finalListResponse = await fetch(baseUrl + '/memory/list?scope=user');
+        const finalList = await finalListResponse.json();
+        expect(finalList.memories.some(item => item.id === memory.id)).toBe(false);
+    });
+
 });

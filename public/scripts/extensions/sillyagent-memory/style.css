@@ -1,0 +1,54 @@
+#sillyagent_memory_settings {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#sillyagent_memory_settings .sa-memory-intro,
+#sillyagent_memory_settings .sa-memory-summary,
+#sillyagent_memory_settings .sa-memory-meta,
+#sillyagent_memory_settings .sa-empty,
+#sillyagent_memory_settings small {
+    opacity: 0.8;
+}
+
+#sillyagent_memory_settings .sa-memory-toolbar,
+#sillyagent_memory_settings .sa-memory-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+#sillyagent_memory_settings .sa-memory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+#sillyagent_memory_settings .sa-memory-row {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 8px;
+    overflow-wrap: anywhere;
+}
+
+#sillyagent_memory_settings .sa-memory-content {
+    white-space: pre-wrap;
+}
+
+#sillyagent_memory_settings .sa-memory-meta {
+    display: block;
+    margin-top: 5px;
+}
+
+#sillyagent_memory_settings #sillyagent_memory_status {
+    min-height: 1.2em;
+    font-size: 0.9em;
+}
+
+#sillyagent_memory_settings #sillyagent_memory_status.error {
+    color: var(--warning, #d88);
+}

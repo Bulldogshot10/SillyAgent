@@ -1,0 +1,44 @@
+<div id="sillyagent_memory_settings" class="extension_settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>SillyAgent Memory</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <p class="sa-memory-intro">Manage approved memories, review proposals, and run dreaming for the active chat.</p>
+            <label class="checkbox_label" for="sa_autoRetrieveEnabled">
+                <input id="sa_autoRetrieveEnabled" type="checkbox" checked />
+                <span>Automatic retrieval</span>
+            </label>
+            <small>Inject up to 3 approved memories relevant to the current prompt.</small>
+            <label class="checkbox_label" for="sa_autoCaptureEnabled">
+                <input id="sa_autoCaptureEnabled" type="checkbox" />
+                <span>Automatic chat capture (opt-in)</span>
+            </label>
+            <small>Store user and assistant turns as chat-scoped events. Captured turns are not immediately treated as approved memories.</small>
+            <label class="checkbox_label" for="sa_autoDreamEnabled">
+                <input id="sa_autoDreamEnabled" type="checkbox" />
+                <span>Automatic dreaming (opt-in)</span>
+            </label>
+            <small>When capture is enabled, look for recurring topics every 12 captured turns. Dreaming creates proposals, never auto-approves them.</small>
+            <div class="sa-memory-toolbar">
+                <button id="sa_memory_refresh" class="menu_button" type="button">Refresh memory</button>
+                <button id="sa_memory_dream" class="menu_button" type="button">Dream current chat</button>
+            </div>
+            <small id="sa_memory_summary" class="sa-memory-summary">Loading memory summary…</small>
+            <div id="sillyagent_memory_status" role="status" aria-live="polite"></div>
+            <label for="sa_memory_search">Filter current list</label>
+            <input id="sa_memory_search" class="text_pole" type="search" placeholder="Search proposals or memories" />
+            <h4>Pending proposals</h4>
+            <div id="sa_memory_proposals" class="sa-memory-list"><p class="sa-empty">Loading proposals…</p></div>
+            <h4>Accepted memories</h4>
+            <label for="sa_memory_scope">Scope</label>
+            <select id="sa_memory_scope" class="text_pole">
+                <option value="user">User memory</option>
+                <option value="chat">Current chat</option>
+                <option value="character">Current character</option>
+            </select>
+            <div id="sa_memory_accepted" class="sa-memory-list"><p class="sa-empty">Loading memories…</p></div>
+        </div>
+    </div>
+</div>
