@@ -58,3 +58,11 @@ Memories are scoped to a user, character, or chat. Relevant retrieval includes u
 - `POST /api/agent/tools/memory/proposals/:id/review` accepts `{"decision":"approve"}` or `{"decision":"reject"}`.
 
 Proposal creation can be disabled with `agentTools.memoryProposalsEnabled: false` in server configuration. Reviewing proposals uses the authenticated application endpoint. This slice establishes durable storage, scoped search, proposal review, and automated tests. Automatic capture of completed chat turns, automatic prompt-time retrieval, embeddings, and background dreaming are follow-up milestones.
+
+## Memory lifecycle v1
+
+The memory API also exposes settings at `/api/agent/tools/memory/settings`, accepted memories at `/api/agent/tools/memory/list`, and `DELETE /api/agent/tools/memory/:id`. Automatic retrieval can be enabled in the UI and only injects approved memories from the user, active chat, and active character scopes.
+
+Automatic capture is disabled by default. When enabled, user and assistant turns are recorded as chat-scoped events with deduplication keys. Captured turns are not directly indexed as memories. Dreaming v1 uses captured events to detect recurring topics and creates reviewable proposals with evidence event IDs; it never auto-approves proposals. Manual dreaming is available at `POST /api/agent/tools/dream`. Optional automatic dreaming runs every 12 newly captured turns in the active chat.
+
+The initial dreaming algorithm is deterministic and model-independent. It deliberately proposes topic observations rather than asserting inferred facts. A later milestone can add a model-backed reflection provider while retaining evidence references, review gates, per-chat scope isolation, and idempotency.

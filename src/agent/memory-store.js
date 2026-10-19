@@ -165,6 +165,11 @@ export class MemoryStore {
             'UNIQUE(scope, scope_id, kind, content));',
         );
         this.#db.exec('CREATE INDEX IF NOT EXISTS memories_scope_updated ON memories(scope, scope_id, updated_at DESC);');
+        this.#db.exec('CREATE TABLE IF NOT EXISTS memory_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
+        this.#db.exec(
+            'CREATE TABLE IF NOT EXISTS memory_capture_keys (' +
+            'capture_key TEXT PRIMARY KEY, event_id TEXT NOT NULL, created_at INTEGER NOT NULL);',
+        );
         this.#db.exec(
             'CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(' +
             'memory_id UNINDEXED, scope UNINDEXED, scope_id UNINDEXED, content, ' +
@@ -395,6 +400,210 @@ export class MemoryStore {
             preview: row.content.length > 400 ? row.content.slice(0, 397) + '...' : row.content,
         }));
     }
+    /**
+     * Return settings scoped to the current user's memory database.
+     * Capture is opt-in; retrieval only reads already-approved memories.
+     * @returns {object} Boolean feature flags.
+     */
+    getSettings() {
+        const settings = {
+            autoRetrieveEnabled: true,
+            autoCaptureEnabled: false,
+            autoDreamEnabled: false,
+        };
+        const rows = this.#db.prepare('SELECT key, value FROM memory_settings').all();
+        for (const row of rows) {
+            if (!Object.hasOwn(settings, row.key)) continue;
+            try {
+                const value = JSON.parse(row.value);
+                if (typeof value === 'boolean') settings[row.key] = value;
+            } catch {
+                // Ignore malformed settings and keep the safe default.
+            }
+        }
+        return settings;
+    }
+
+    /**
+     * Persist a partial set of supported memory settings.
+     * @param {object} patch User-selected settings.
+     * @returns {object} Updated settings.
+     */
+    updateSettings(patch) {
+        if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+            throw new TypeError('Memory settings must be an object.');
+        }
+        const allowed = new Set(['autoRetrieveEnabled', 'autoCaptureEnabled', 'autoDreamEnabled']);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            for (const [key, value] of Object.entries(patch)) {
+                if (!allowed.has(key)) throw new TypeError('Unsupported memory setting: ' + key);
+                if (typeof value !== 'boolean') throw new TypeError('Memory setting ' + key + ' must be a boolean.');
+                this.#db.prepare(
+                    'INSERT INTO memory_settings(key, value) VALUES (?, ?) ' +
+                    'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+                ).run(key, JSON.stringify(value));
+            }
+            this.#db.exec('COMMIT;');
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+        return this.getSettings();
+    }
+
+    /**
+     * List accepted memories from exactly one scope.
+     * @param {object} options Scope and filtering options.
+     * @returns {object[]} Accepted memories.
+     */
+    listMemories({ scope = 'user', scopeId = '', query = '', limit = 50 } = {}) {
+        const target = normalizeScope(scope, scopeId);
+        if (typeof query !== 'string' || query.length > 300) {
+            throw new TypeError('Memory filter must be a string of 300 characters or fewer.');
+        }
+        const safeLimit = Math.max(1, Math.min(100, Number.isInteger(limit) ? limit : 50));
+        const normalizedQuery = query.trim();
+        const sql = 'SELECT * FROM memories WHERE scope = ? AND scope_id = ?' +
+            (normalizedQuery ? ' AND instr(lower(content), lower(?)) > 0' : '') +
+            ' ORDER BY updated_at DESC LIMIT ?';
+        const params = [target.scope, target.scopeId];
+        if (normalizedQuery) params.push(normalizedQuery);
+        params.push(safeLimit);
+        return this.#db.prepare(sql).all(...params).map(row => ({
+            ...toMemory(row),
+            preview: row.content.length > 400 ? row.content.slice(0, 397) + '...' : row.content,
+        }));
+    }
+
+    /**
+     * Delete one accepted memory and remove it from both full-text indexes.
+     * A non-content audit event records the deletion without retaining the deleted text.
+     * @param {string} memoryId Memory ID.
+     * @returns {boolean} Whether a memory was deleted.
+     */
+    deleteMemory(memoryId) {
+        if (typeof memoryId !== 'string' || !memoryId) throw new TypeError('A memory ID is required.');
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const row = this.#db.prepare('SELECT * FROM memories WHERE id = ?').get(memoryId);
+            if (!row) {
+                this.#db.exec('COMMIT;');
+                return false;
+            }
+            this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(memoryId);
+            this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(memoryId);
+            this.#db.prepare('DELETE FROM memories WHERE id = ?').run(memoryId);
+            this.recordEvent({
+                scope: row.scope,
+                scopeId: row.scope_id,
+                eventType: 'memory.deleted',
+                content: 'Memory deleted by user.',
+                metadata: { memoryId, kind: row.kind },
+            });
+            this.#db.exec('COMMIT;');
+            return true;
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    /**
+     * Record a chat turn once, even if frontend lifecycle events fire more than once.
+     * Raw turns remain events only; they do not become approved memories directly.
+     * @param {object} input Captured turn fields.
+     * @returns {object} Stored event and duplicate indicator.
+     */
+    captureTurn({ scopeId, role, content, captureKey, metadata = {}, createdAt = Date.now() }) {
+        const target = normalizeScope('chat', scopeId);
+        if (!['user', 'assistant'].includes(role)) throw new TypeError('Captured turn role must be user or assistant.');
+        const text = normalizeText(content, MAX_EVENT_CONTENT, 'Captured turn content');
+        const key = normalizeText(captureKey, 256, 'Capture key');
+        if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Event timestamp must be a non-negative integer.');
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const existing = this.#db.prepare(
+                'SELECT e.* FROM memory_capture_keys k INNER JOIN memory_events e ON e.id = k.event_id WHERE k.capture_key = ?',
+            ).get(key);
+            if (existing) {
+                this.#db.exec('COMMIT;');
+                return { event: toEvent(existing), duplicate: true };
+            }
+            const event = this.recordEvent({
+                scope: target.scope,
+                scopeId: target.scopeId,
+                eventType: role === 'user' ? 'chat.user_turn' : 'chat.assistant_turn',
+                content: text,
+                metadata: { ...metadata, role, origin: 'automatic_capture' },
+                createdAt,
+            });
+            this.#db.prepare(
+                'INSERT INTO memory_capture_keys(capture_key, event_id, created_at) VALUES (?, ?, ?)',
+            ).run(key, event.id, createdAt);
+            this.#db.exec('COMMIT;');
+            return { event, duplicate: false };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    /**
+     * Return captured-turn count for the active chat. Used to trigger optional dreaming.
+     * @param {string} scopeId Chat ID.
+     * @returns {number} Captured turn count.
+     */
+    countCapturedTurns(scopeId) {
+        const target = normalizeScope('chat', scopeId);
+        return this.#db.prepare(
+            'SELECT COUNT(*) AS count FROM memory_events WHERE scope = ? AND scope_id = ? ' +
+            'AND event_type IN (\'chat.user_turn\', \'chat.assistant_turn\')',
+        ).get(target.scope, target.scopeId).count;
+    }
+
+    /**
+     * Read recent events from a single scope, optionally restricted to event types.
+     * Results are returned in chronological order for reflection and consolidation.
+     * @param {object} options Query options.
+     * @returns {object[]} Events.
+     */
+    listEvents({ scope = 'chat', scopeId, eventTypes = [], limit = 100 } = {}) {
+        const target = normalizeScope(scope, scopeId);
+        if (!Array.isArray(eventTypes) || eventTypes.some(type => typeof type !== 'string' || type.length > 64)) {
+            throw new TypeError('Event types must be an array of short strings.');
+        }
+        const safeLimit = Math.max(1, Math.min(200, Number.isInteger(limit) ? limit : 100));
+        const params = [target.scope, target.scopeId];
+        let sql = 'SELECT * FROM memory_events WHERE scope = ? AND scope_id = ?';
+        if (eventTypes.length) {
+            sql += ' AND event_type IN (' + eventTypes.map(() => '?').join(', ') + ')';
+            params.push(...eventTypes);
+        }
+        sql += ' ORDER BY created_at DESC LIMIT ?';
+        params.push(safeLimit);
+        return this.#db.prepare(sql).all(...params).reverse().map(toEvent);
+    }
+
+    /**
+     * Return true when a matching accepted memory or pending proposal already exists.
+     * @param {object} input Memory identity.
+     * @returns {boolean} Whether the candidate is already known.
+     */
+    hasMemoryOrPending({ scope, scopeId, kind, content }) {
+        const target = normalizeScope(scope, scopeId);
+        const text = normalizeText(content, MAX_CONTENT, 'Memory content');
+        if (!KINDS.has(kind)) throw new TypeError('Unsupported memory kind.');
+        const accepted = this.#db.prepare(
+            'SELECT 1 FROM memories WHERE scope = ? AND scope_id = ? AND kind = ? AND content = ? LIMIT 1',
+        ).get(target.scope, target.scopeId, kind, text);
+        if (accepted) return true;
+        const pending = this.#db.prepare(
+            'SELECT 1 FROM memory_proposals WHERE status = \'pending\' AND scope = ? AND scope_id = ? AND kind = ? AND content = ? LIMIT 1',
+        ).get(target.scope, target.scopeId, kind, text);
+        return !!pending;
+    }
+
     getSummary() {
         return {
             events: this.#db.prepare('SELECT COUNT(*) AS count FROM memory_events').get().count,

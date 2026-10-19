@@ -147,4 +147,45 @@ describe('MemoryStore', () => {
         const store = await createMemoryStore();
         expect(store.searchMemories({ query: '!!! ???', scope: 'user' })).toEqual([]);
     });
+    test('persists opt-in settings and deduplicates captured turns', async () => {
+        const store = await createMemoryStore();
+        expect(store.getSettings()).toEqual({
+            autoRetrieveEnabled: true,
+            autoCaptureEnabled: false,
+            autoDreamEnabled: false,
+        });
+        store.updateSettings({ autoCaptureEnabled: true, autoDreamEnabled: true });
+        expect(store.getSettings().autoCaptureEnabled).toBe(true);
+        expect(store.getSettings().autoDreamEnabled).toBe(true);
+        expect(() => store.updateSettings({ autoCaptureEnabled: 'yes' })).toThrow(/must be a boolean/);
+
+        const first = store.captureTurn({
+            scopeId: 'chat-1',
+            role: 'user',
+            content: 'We keep returning to the silver key mystery.',
+            captureKey: 'message-1',
+        });
+        const second = store.captureTurn({
+            scopeId: 'chat-1',
+            role: 'user',
+            content: 'We keep returning to the silver key mystery.',
+            captureKey: 'message-1',
+        });
+        expect(first.duplicate).toBe(false);
+        expect(second.duplicate).toBe(true);
+        expect(store.countCapturedTurns('chat-1')).toBe(1);
+        expect(store.listEvents({ scope: 'chat', scopeId: 'chat-1', eventTypes: ['chat.user_turn'] })).toHaveLength(1);
+    });
+
+    test('lists and deletes accepted memories from both search indexes', async () => {
+        const store = await createMemoryStore();
+        const proposal = store.proposeMemory({ scope: 'user', content: 'The silver key is in a desk.' });
+        const reviewed = store.reviewProposal(proposal.id, 'approve');
+        expect(store.listMemories({ scope: 'user' })).toHaveLength(1);
+        expect(store.deleteMemory(reviewed.memory.id)).toBe(true);
+        expect(store.deleteMemory(reviewed.memory.id)).toBe(false);
+        expect(store.listMemories({ scope: 'user' })).toHaveLength(0);
+        expect(store.searchMemories({ query: 'silver key', scope: 'user' })).toHaveLength(0);
+    });
+
 });
