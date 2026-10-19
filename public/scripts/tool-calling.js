@@ -1,6 +1,6 @@
 import { DOMPurify } from '../lib.js';
 
-import { addOneMessage, chat, event_types, eventSource, getGeneratingApi, getGeneratingModel, getRequestHeaders, main_api, saveChatConditional, system_avatar, systemUserName } from '../script.js';
+import { addOneMessage, characters, chat, event_types, eventSource, getCurrentChatId, getGeneratingApi, getGeneratingModel, getRequestHeaders, main_api, saveChatConditional, system_avatar, systemUserName, this_chid } from '../script.js';
 import { chat_completion_sources, custom_prompt_post_processing_types, getChatCompletionModel, model_list, oai_settings } from './openai.js';
 import { Popup } from './popup.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
@@ -466,6 +466,8 @@ export class ToolManager {
                         body: JSON.stringify({
                             name: serverToolName,
                             arguments: parameters,
+                            activeChatId: getCurrentChatId() || null,
+                            activeCharacterId: characters[this_chid]?.avatar || null,
                         }),
                     });
                     const execution = await executionResponse.json().catch(() => null);
