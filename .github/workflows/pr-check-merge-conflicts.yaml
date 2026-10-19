@@ -15,7 +15,8 @@ jobs:
   check-merge-conflicts:
     name: ⚔️ Check Merge Conflicts
     runs-on: ubuntu-latest
-    if: always()
+    # The bot app token is only configured on the canonical upstream repository.
+    if: github.repository == 'SillyTavern/SillyTavern'
 
     steps:
       - name: Mint App Token
