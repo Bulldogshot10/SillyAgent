@@ -188,4 +188,28 @@ describe('MemoryStore', () => {
         expect(store.searchMemories({ query: 'silver key', scope: 'user' })).toHaveLength(0);
     });
 
+    test('hybrid ranking favors exact phrases and multi-term coverage', async () => {
+        const store = await createMemoryStore();
+        const partial = store.proposeMemory({
+            scope: 'user',
+            content: 'Silver details were written down, then the key was moved.',
+            kind: 'fact',
+            importance: 5,
+        });
+        const exact = store.proposeMemory({
+            scope: 'user',
+            content: 'The silver key is beneath the floorboards.',
+            kind: 'fact',
+            importance: 2,
+        });
+        store.reviewProposal(partial.id, 'approve');
+        store.reviewProposal(exact.id, 'approve');
+
+        const results = store.searchMemories({ query: 'silver key', scope: 'user', limit: 2 });
+        expect(results).toHaveLength(2);
+        expect(results[0].content).toBe('The silver key is beneath the floorboards.');
+        expect(results[0].retrievalScore).toBeGreaterThan(results[1].retrievalScore);
+        expect(results[0].matchedTerms).toEqual(['silver', 'key']);
+    });
+
 });

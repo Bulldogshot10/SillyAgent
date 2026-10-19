@@ -390,14 +390,50 @@ export class MemoryStore {
             matchParams.push(...shortCjkTokens.map(token => '%' + token + '%'));
         }
 
+        // Over-fetch lexical candidates before applying the blended ranking.
+        const candidateLimit = Math.min(50, safeLimit * 10);
         const sql = 'WITH matches AS (' + matchQueries.join(' UNION ALL ') + ') ' +
-            'SELECT m.* FROM memories m ' +
+            'SELECT m.*, ranked.rank AS search_rank FROM memories m ' +
             'INNER JOIN (SELECT memory_id, MIN(rank) AS rank FROM matches GROUP BY memory_id) ranked ON ranked.memory_id = m.id ' +
             'WHERE (' + conditions.join(' OR ') + ') ' +
             'ORDER BY ranked.rank ASC, m.importance DESC, m.updated_at DESC LIMIT ?';
-        return this.#db.prepare(sql).all(...matchParams, ...scopeParams, safeLimit).map(row => ({
-            ...toMemory(row),
-            preview: row.content.length > 400 ? row.content.slice(0, 397) + '...' : row.content,
+        const rows = this.#db.prepare(sql).all(...matchParams, ...scopeParams, candidateLimit);
+        const normalizedQuery = text.normalize('NFKC').toLocaleLowerCase();
+        const now = Date.now();
+        const ranked = rows.map((row, index) => {
+            const normalizedContent = row.content.normalize('NFKC').toLocaleLowerCase();
+            const matchedTokens = tokens.filter(token => normalizedContent.includes(token));
+            const coverage = matchedTokens.length / tokens.length;
+            const exactPhrase = normalizedContent.includes(normalizedQuery);
+            const bm25Score = rows.length > 1 ? 1 - (index / (rows.length - 1)) : 1;
+            const ageDays = Math.max(0, (now - row.updated_at) / 86400000);
+            const recencyScore = 1 / (1 + (ageDays / 30));
+            const importanceScore = row.importance / 5;
+            const score = Math.min(1, (exactPhrase ? 0.45 : 0)
+                + (coverage * 0.30)
+                + (bm25Score * 0.15)
+                + (importanceScore * 0.07)
+                + (recencyScore * 0.03));
+            return {
+                row,
+                score,
+                exactPhrase,
+                coverage,
+                matchedTokens,
+                bm25Rank: row.search_rank,
+            };
+        }).sort((left, right) => right.score - left.score
+            || Number(right.exactPhrase) - Number(left.exactPhrase)
+            || right.coverage - left.coverage
+            || left.bm25Rank - right.bm25Rank
+            || right.row.importance - left.row.importance
+            || right.row.updated_at - left.row.updated_at);
+
+        return ranked.slice(0, safeLimit).map(item => ({
+            ...toMemory(item.row),
+            preview: item.row.content.length > 400 ? item.row.content.slice(0, 397) + '...' : item.row.content,
+            retrievalScore: Number(item.score.toFixed(4)),
+            matchedTerms: item.matchedTokens,
         }));
     }
     /**

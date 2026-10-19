@@ -66,3 +66,8 @@ The memory API also exposes settings at `/api/agent/tools/memory/settings`, acce
 Automatic capture is disabled by default. When enabled, user and assistant turns are recorded as chat-scoped events with deduplication keys. Captured turns are not directly indexed as memories. Dreaming v1 uses captured events to detect recurring topics and creates reviewable proposals with evidence event IDs; it never auto-approves proposals. Manual dreaming is available at `POST /api/agent/tools/dream`. Optional automatic dreaming runs every 12 newly captured turns in the active chat.
 
 The initial dreaming algorithm is deterministic and model-independent. It deliberately proposes topic observations rather than asserting inferred facts. A later milestone can add a model-backed reflection provider while retaining evidence references, review gates, per-chat scope isolation, and idempotency.
+
+
+## Hybrid memory ranking
+
+Retrieval combines Unicode FTS5, trigram substring search, and a short-CJK substring fallback. It over-fetches a bounded candidate set and ranks results using exact phrase matching, query-term coverage, lexical rank, importance, and recency. Results remain scope-filtered before returning to the caller. Embedding-based semantic search is not enabled yet; the hybrid lexical layer remains deterministic and works without a separate embedding model or index.
