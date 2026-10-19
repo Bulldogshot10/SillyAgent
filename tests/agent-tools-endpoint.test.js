@@ -115,6 +115,43 @@ describe('agent tools API', () => {
         expect(searched.result.memories).toHaveLength(1);
     });
 
+    test('bounds retrieved memory content before returning it to the model', async () => {
+        const content = 'boundedneedle ' + 'x'.repeat(3900);
+        const proposalResponse = await fetch(baseUrl + '/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: 'memory_propose',
+                arguments: { content, scope: 'user', kind: 'fact' },
+            }),
+        });
+        const proposed = await proposalResponse.json();
+        expect(proposalResponse.status).toBe(200);
+
+        const reviewResponse = await fetch(baseUrl + '/memory/proposals/' + proposed.result.proposal.id + '/review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision: 'approve' }),
+        });
+        expect(reviewResponse.status).toBe(200);
+
+        const searchResponse = await fetch(baseUrl + '/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: 'memory_search',
+                arguments: { query: 'boundedneedle', scope: 'user' },
+            }),
+        });
+        const searched = await searchResponse.json();
+        const memory = searched.result.memories.find(item => item.content.startsWith('boundedneedle'));
+
+        expect(searchResponse.status).toBe(200);
+        expect(memory.content.length).toBeLessThanOrEqual(800);
+        expect(memory.metadata).toBeUndefined();
+        expect(memory.scopeId).toBeUndefined();
+    });
+
     test('rejects invalid inputs and unknown tools', async () => {
         const invalid = await fetch(baseUrl + '/execute', {
             method: 'POST',
