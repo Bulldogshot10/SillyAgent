@@ -96,6 +96,7 @@ describe('MemoryStore', () => {
         expect(second.id).toBe(first.id);
         expect(second.duplicate).toBe(true);
         expect(store.getSummary().pendingProposals).toBe(1);
+        expect(store.getSummary().events).toBe(1);
     });
 
     test('persists accepted memories across reopen and records source events', async () => {
