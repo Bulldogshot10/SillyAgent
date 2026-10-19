@@ -17,7 +17,7 @@ const MEMORY_SEARCH_SCHEMA = {
     properties: {
         query: { type: 'string', minLength: 1, maxLength: 300 },
         scope: { type: 'string', enum: ['relevant', 'user', 'character', 'chat'] },
-        limit: { type: 'integer', minimum: 1, maximum: 10 },
+        limit: { type: 'integer', minimum: 1, maximum: 5 },
     },
     required: ['query'],
     additionalProperties: false,

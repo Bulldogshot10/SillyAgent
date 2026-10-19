@@ -312,7 +312,7 @@ export class MemoryStore {
             throw new TypeError('Search scope must be relevant, user, character, or chat.');
         }
 
-        const safeLimit = Math.max(1, Math.min(10, Number.isInteger(limit) ? limit : 5));
+        const safeLimit = Math.max(1, Math.min(5, Number.isInteger(limit) ? limit : 5));
         const conditions = [];
         const params = [matchExpression];
 
