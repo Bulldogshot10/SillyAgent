@@ -441,6 +441,43 @@ export class MemoryStore {
      * Capture is opt-in; retrieval only reads already-approved memories.
      * @returns {object} Boolean feature flags.
      */
+    /**
+     * Clear raw captured turns from one chat while retaining approved memories and proposals.
+     * @param {string} scopeId Chat ID.
+     * @returns {number} Number of raw turns removed.
+     */
+    clearCapturedTurns(scopeId) {
+        const target = normalizeScope('chat', scopeId);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const count = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memory_events WHERE scope = ? AND scope_id = ? ' +
+                'AND event_type IN (\\'chat.user_turn\\', \\'chat.assistant_turn\\')',
+            ).get(target.scope, target.scopeId).count;
+            this.#db.prepare(
+                'DELETE FROM memory_capture_keys WHERE event_id IN (' +
+                'SELECT id FROM memory_events WHERE scope = ? AND scope_id = ? ' +
+                'AND event_type IN (\\'chat.user_turn\\', \\'chat.assistant_turn\\'))',
+            ).run(target.scope, target.scopeId);
+            this.#db.prepare(
+                'DELETE FROM memory_events WHERE scope = ? AND scope_id = ? ' +
+                'AND event_type IN (\\'chat.user_turn\\', \\'chat.assistant_turn\\')',
+            ).run(target.scope, target.scopeId);
+            this.recordEvent({
+                scope: target.scope,
+                scopeId: target.scopeId,
+                eventType: 'memory.capture_history_cleared',
+                content: 'Captured turn history cleared by user.',
+                metadata: { deletedTurns: count },
+            });
+            this.#db.exec('COMMIT;');
+            return count;
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
     getSettings() {
         const settings = {
             autoRetrieveEnabled: true,

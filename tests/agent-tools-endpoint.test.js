@@ -230,6 +230,16 @@ describe('agent tools API', () => {
         });
         expect(dreamResponse.status).toBe(200);
         expect((await dreamResponse.json()).eventsReviewed).toBe(1);
+
+        const clearResponse = await fetch(baseUrl + '/memory/capture-history/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ activeChatId: 'dream-test-chat' }),
+        });
+        const cleared = await clearResponse.json();
+        expect(clearResponse.status).toBe(200);
+        expect(cleared.clearedTurns).toBe(1);
+        expect(cleared.capturedTurnsRemaining).toBe(0);
     });
 
     test('lists and deletes approved memories through the memory API', async () => {
@@ -254,11 +264,28 @@ describe('agent tools API', () => {
         const memory = listed.memories.find(item => item.content === 'A brass telescope belongs in the attic.');
         expect(memory).toBeDefined();
 
+        const retrievalResponse = await fetch(baseUrl + '/retrieve-context', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: 'brass telescope', limit: 3 }),
+        });
+        const retrieval = await retrievalResponse.json();
+        expect(retrievalResponse.status).toBe(200);
+        expect(retrieval.enabled).toBe(true);
+        expect(retrieval.memories.some(item => item.content === 'A brass telescope belongs in the attic.')).toBe(true);
+
         const deleteResponse = await fetch(baseUrl + '/memory/' + memory.id, { method: 'DELETE' });
         expect(deleteResponse.status).toBe(200);
         const finalListResponse = await fetch(baseUrl + '/memory/list?scope=user');
         const finalList = await finalListResponse.json();
         expect(finalList.memories.some(item => item.id === memory.id)).toBe(false);
+        const afterDeleteRetrievalResponse = await fetch(baseUrl + '/retrieve-context', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: 'brass telescope', limit: 3 }),
+        });
+        const afterDeleteRetrieval = await afterDeleteRetrievalResponse.json();
+        expect(afterDeleteRetrieval.memories.some(item => item.content === 'A brass telescope belongs in the attic.')).toBe(false);
     });
 
 });

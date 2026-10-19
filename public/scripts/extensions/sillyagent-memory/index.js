@@ -242,6 +242,32 @@ async function runDreaming() {
     }
 }
 
+async function clearCapturedHistory() {
+    const ids = getContextIds();
+    if (!ids.activeChatId) {
+        setStatus('Open a chat before clearing captured history.', true);
+        return;
+    }
+    const confirmed = window.confirm(
+        'Clear captured raw turns for this chat? Approved memories and existing proposals will remain until you remove them separately.',
+    );
+    if (!confirmed) return;
+    const button = document.getElementById('sa_memory_clear_captured');
+    if (button) button.disabled = true;
+    try {
+        const result = await requestApi('/memory/capture-history/clear', {
+            method: 'POST',
+            body: JSON.stringify({ activeChatId: ids.activeChatId }),
+        });
+        setStatus('Cleared ' + result.clearedTurns + ' captured turns. Existing memories and proposals were kept.');
+        await refreshPanel();
+    } catch (error) {
+        setStatus(error.message, true);
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
 function extractMessageText(message) {
     if (!message || typeof message.mes !== 'string') return '';
     return message.mes.trim().slice(0, 12000);
@@ -346,7 +372,8 @@ export async function init() {
 
     document.getElementById('sa_memory_refresh')?.addEventListener('click', refreshPanel);
     document.getElementById('sa_memory_dream')?.addEventListener('click', runDreaming);
-    document.getElementById('sa_memory_scope')?.addEventListener('change', loadAcceptedMemories);
+    document.getElementById('sa_memory_clear_captured')?.addEventListener('click', clearCapturedHistory);
+    document.getElementById('sa_memory_scope')?.addEventListener('change', () => loadAcceptedMemories().catch(error => setStatus(error.message, true)));
     document.getElementById('sa_memory_search')?.addEventListener('keydown', event => {
         if (event.key === 'Enter') refreshPanel();
     });

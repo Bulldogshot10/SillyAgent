@@ -6,10 +6,10 @@ This document describes the first server-side slice of the built-in tool harness
 
 The API is mounted under `/api/agent/tools`.
 
-- `GET /api/agent/tools` returns enabled roleplay tools in OpenAI-compatible function-calling format.
+- `GET /api/agent/tools` returns enabled roleplay and memory tools in OpenAI-compatible function-calling format.
 - `POST /api/agent/tools/execute` executes a registered roleplay tool. The JSON request shape is `{"name":"roleplay_roll_dice","arguments":{"count":2,"sides":20}}`.
 
-The execute endpoint only allows the `roleplay` toolset. Tool inputs are checked against their registered schema. Requests are limited to 16 KiB; serialized tool results are limited to 32 KiB; each tool has a bounded timeout.
+The execute endpoint only allows the `roleplay` and `memory` toolsets. Tool inputs are checked against their registered schema. Requests are limited to 16 KiB; serialized tool results are limited to 32 KiB; each tool has a bounded timeout.
 
 ## Built-in tool
 
@@ -40,10 +40,10 @@ Unit and endpoint tests live under `tests/`. The `SillyAgent CI` GitHub Actions 
 
 ## Next integration steps
 
-1. Connect model tool-call parsing to this registry through provider adapters while keeping ordinary text generation working.
-2. Add a persistent roleplay state store with explicit world/chat/character scoping.
-3. Add episodic memory search (SQLite FTS5) and local vector retrieval.
-4. Add a background memory-consolidation worker only after persistence, scope, and audit history are tested.
+1. Add a model-backed dreaming/reflection provider that returns evidence-linked candidates and still requires review.
+2. Evaluate embeddings against the current deterministic hybrid lexical ranking using a small retrieval benchmark.
+3. Add prompt-hook integration tests across text and chat completion provider paths.
+4. Consider cross-chat and character-level consolidation only with explicit scope and provenance controls.
 
 
 ## Persistent memory engine (initial vertical slice)
@@ -57,7 +57,7 @@ Memories are scoped to a user, character, or chat. Relevant retrieval includes u
 - `GET /api/agent/tools/memory/proposals` lists pending candidates.
 - `POST /api/agent/tools/memory/proposals/:id/review` accepts `{"decision":"approve"}` or `{"decision":"reject"}`.
 
-Proposal creation can be disabled with `agentTools.memoryProposalsEnabled: false` in server configuration. Reviewing proposals uses the authenticated application endpoint. This slice establishes durable storage, scoped search, proposal review, and automated tests. Automatic capture of completed chat turns, automatic prompt-time retrieval, embeddings, and background dreaming are follow-up milestones.
+Proposal creation can be disabled with `agentTools.memoryProposalsEnabled: false` in server configuration. Reviewing proposals uses the authenticated application endpoint. This slice establishes durable storage, scoped search, proposal review, automated retrieval, opt-in capture, and deterministic dreaming v1. Embedding retrieval and model-backed reflection remain follow-up work.
 
 ## Memory lifecycle v1
 
@@ -71,3 +71,6 @@ The initial dreaming algorithm is deterministic and model-independent. It delibe
 ## Hybrid memory ranking
 
 Retrieval combines Unicode FTS5, trigram substring search, and a short-CJK substring fallback. It over-fetches a bounded candidate set and ranks results using exact phrase matching, query-term coverage, lexical rank, importance, and recency. Results remain scope-filtered before returning to the caller. Embedding-based semantic search is not enabled yet; the hybrid lexical layer remains deterministic and works without a separate embedding model or index.
+
+
+The Memory Control Panel can clear captured raw turns for the active chat. This action removes only captured `chat.user_turn` and `chat.assistant_turn` events plus their deduplication keys; accepted memories and existing proposals remain, so users can intentionally manage them separately.

@@ -175,6 +175,9 @@ describe('MemoryStore', () => {
         expect(second.duplicate).toBe(true);
         expect(store.countCapturedTurns('chat-1')).toBe(1);
         expect(store.listEvents({ scope: 'chat', scopeId: 'chat-1', eventTypes: ['chat.user_turn'] })).toHaveLength(1);
+        expect(store.clearCapturedTurns('chat-1')).toBe(1);
+        expect(store.countCapturedTurns('chat-1')).toBe(0);
+        expect(store.listEvents({ scope: 'chat', scopeId: 'chat-1', eventTypes: ['chat.user_turn'] })).toHaveLength(0);
     });
 
     test('lists and deletes accepted memories from both search indexes', async () => {

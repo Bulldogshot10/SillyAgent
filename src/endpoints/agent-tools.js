@@ -154,6 +154,27 @@ router.delete('/memory/:id', async (request, response) => {
     }
 });
 
+router.post('/memory/capture-history/clear', async (request, response) => {
+    const activeChatId = getSafeContextId(request.body?.activeChatId);
+    if (!activeChatId) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_chat_id', message: 'Clearing captured history requires an active chat.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        const clearedTurns = store.clearCapturedTurns(activeChatId);
+        return response.json({
+            ok: true,
+            clearedTurns,
+            capturedTurnsRemaining: store.countCapturedTurns(activeChatId),
+        });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
 router.post('/retrieve-context', async (request, response) => {
     const query = request.body?.query;
     if (typeof query !== 'string' || !query.trim() || query.length > 300) {

@@ -21,9 +21,11 @@
                 <span>Automatic dreaming (opt-in)</span>
             </label>
             <small>When capture is enabled, look for recurring topics every 12 captured turns. Dreaming creates proposals, never auto-approves them.</small>
+            <small>Clearing captured history removes raw turn events from the active chat, but intentionally preserves accepted memories and existing proposals.</small>
             <div class="sa-memory-toolbar">
                 <button id="sa_memory_refresh" class="menu_button" type="button">Refresh memory</button>
                 <button id="sa_memory_dream" class="menu_button" type="button">Dream current chat</button>
+                <button id="sa_memory_clear_captured" class="menu_button" type="button">Clear captured history</button>
             </div>
             <small id="sa_memory_summary" class="sa-memory-summary">Loading memory summary…</small>
             <div id="sillyagent_memory_status" role="status" aria-live="polite"></div>
