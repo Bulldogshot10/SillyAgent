@@ -437,11 +437,6 @@ export class MemoryStore {
         }));
     }
     /**
-     * Return settings scoped to the current user's memory database.
-     * Capture is opt-in; retrieval only reads already-approved memories.
-     * @returns {object} Boolean feature flags.
-     */
-    /**
      * Clear raw captured turns from one chat while retaining approved memories and proposals.
      * @param {string} scopeId Chat ID.
      * @returns {number} Number of raw turns removed.
@@ -452,17 +447,17 @@ export class MemoryStore {
         try {
             const count = this.#db.prepare(
                 'SELECT COUNT(*) AS count FROM memory_events WHERE scope = ? AND scope_id = ? ' +
-                'AND event_type IN (\\'chat.user_turn\\', \\'chat.assistant_turn\\')',
-            ).get(target.scope, target.scopeId).count;
+                'AND event_type IN (?, ?)',
+            ).get(target.scope, target.scopeId, 'chat.user_turn', 'chat.assistant_turn').count;
             this.#db.prepare(
                 'DELETE FROM memory_capture_keys WHERE event_id IN (' +
                 'SELECT id FROM memory_events WHERE scope = ? AND scope_id = ? ' +
-                'AND event_type IN (\\'chat.user_turn\\', \\'chat.assistant_turn\\'))',
-            ).run(target.scope, target.scopeId);
+                'AND event_type IN (?, ?))',
+            ).run(target.scope, target.scopeId, 'chat.user_turn', 'chat.assistant_turn');
             this.#db.prepare(
                 'DELETE FROM memory_events WHERE scope = ? AND scope_id = ? ' +
-                'AND event_type IN (\\'chat.user_turn\\', \\'chat.assistant_turn\\')',
-            ).run(target.scope, target.scopeId);
+                'AND event_type IN (?, ?)',
+            ).run(target.scope, target.scopeId, 'chat.user_turn', 'chat.assistant_turn');
             this.recordEvent({
                 scope: target.scope,
                 scopeId: target.scopeId,
