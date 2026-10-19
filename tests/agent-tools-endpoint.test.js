@@ -9,8 +9,12 @@ import { router } from '../src/endpoints/agent-tools.js';
 let server;
 let baseUrl;
 let userRoot;
+const memoryProposalsEnvKey = 'SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED';
+let previousMemoryProposalsEnv;
 
 beforeAll(async () => {
+    previousMemoryProposalsEnv = process.env[memoryProposalsEnvKey];
+    process.env[memoryProposalsEnvKey] = 'true';
     userRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-endpoint-'));
     const app = express();
     app.use(express.json());
@@ -34,6 +38,11 @@ afterAll(async () => {
         });
     }
     if (userRoot) await fs.rm(userRoot, { recursive: true, force: true });
+    if (previousMemoryProposalsEnv === undefined) {
+        delete process.env[memoryProposalsEnvKey];
+    } else {
+        process.env[memoryProposalsEnvKey] = previousMemoryProposalsEnv;
+    }
 });
 
 describe('agent tools API', () => {
