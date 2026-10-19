@@ -44,3 +44,17 @@ Unit and endpoint tests live under `tests/`. The `SillyAgent CI` GitHub Actions 
 2. Add a persistent roleplay state store with explicit world/chat/character scoping.
 3. Add episodic memory search (SQLite FTS5) and local vector retrieval.
 4. Add a background memory-consolidation worker only after persistence, scope, and audit history are tested.
+
+
+## Persistent memory engine (initial vertical slice)
+
+The memory store uses Node's built-in SQLite API plus SQLite FTS5. Each user's database lives under that user's data root at `sillyagent/memory.sqlite`. This feature requires Node.js 22.5+ with `node:sqlite` and SQLite FTS5. If the runtime lacks SQLite support, the memory endpoints return a clear error; ordinary SillyTavern chat remains independent of this feature.
+
+Memories are scoped to a user, character, or chat. Relevant retrieval includes user-level memories plus memories for the active chat and character supplied by the browser. It does not search other chats or characters by default. Only approved memories are indexed.
+
+- `memory_search` searches approved memories using FTS5.
+- `memory_propose` creates a pending candidate and a source event. It never writes directly to accepted memory.
+- `GET /api/agent/tools/memory/proposals` lists pending candidates.
+- `POST /api/agent/tools/memory/proposals/:id/review` accepts `{"decision":"approve"}` or `{"decision":"reject"}`.
+
+Proposal creation can be disabled with `agentTools.memoryProposalsEnabled: false` in server configuration. Reviewing proposals uses the authenticated application endpoint. This slice establishes durable storage, scoped search, proposal review, and automated tests. Automatic capture of completed chat turns, automatic prompt-time retrieval, embeddings, and background dreaming are follow-up milestones.
