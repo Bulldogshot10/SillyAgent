@@ -35,6 +35,7 @@ jobs:
         run: >-
           npx eslint
           src/agent/tool-registry.js
+          src/agent/memory-store.js
           src/agent/builtin-tools.js
           src/endpoints/agent-tools.js
           src/server-startup.js
