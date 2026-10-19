@@ -42,7 +42,7 @@ jobs:
           public/scripts/tool-calling.js
 
       - name: Lint test files
-        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js
+        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-memory-store.test.js
         working-directory: tests
 
       - name: Run unit tests
