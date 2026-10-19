@@ -348,23 +348,23 @@ export class MemoryStore {
         const scopeParams = [];
 
         if (scope === 'user') {
-            conditions.push("m.scope = 'user'");
+            conditions.push('m.scope = \'user\'');
         } else if (scope === 'chat') {
             if (typeof activeChatId !== 'string' || !activeChatId) return [];
-            conditions.push("m.scope = 'chat' AND m.scope_id = ?");
+            conditions.push('m.scope = \'chat\' AND m.scope_id = ?');
             scopeParams.push(activeChatId);
         } else if (scope === 'character') {
             if (typeof activeCharacterId !== 'string' || !activeCharacterId) return [];
-            conditions.push("m.scope = 'character' AND m.scope_id = ?");
+            conditions.push('m.scope = \'character\' AND m.scope_id = ?');
             scopeParams.push(activeCharacterId);
         } else {
-            conditions.push("m.scope = 'user'");
+            conditions.push('m.scope = \'user\'');
             if (typeof activeChatId === 'string' && activeChatId) {
-                conditions.push("(m.scope = 'chat' AND m.scope_id = ?)");
+                conditions.push('(m.scope = \'chat\' AND m.scope_id = ?)');
                 scopeParams.push(activeChatId);
             }
             if (typeof activeCharacterId === 'string' && activeCharacterId) {
-                conditions.push("(m.scope = 'character' AND m.scope_id = ?)");
+                conditions.push('(m.scope = \'character\' AND m.scope_id = ?)');
                 scopeParams.push(activeCharacterId);
             }
         }
