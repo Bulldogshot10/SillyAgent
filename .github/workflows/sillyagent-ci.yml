@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sillyagent-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Unit tests and lint
@@ -46,4 +50,4 @@ jobs:
         working-directory: tests
 
       - name: Run unit tests
-        run: npm run test:unit --prefix tests
+        run: npm run test:unit --prefix tests -- --runInBand
