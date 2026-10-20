@@ -211,6 +211,78 @@ describe('MemoryStore', () => {
         expect(store.searchMemories({ query: 'silver key', scope: 'user' })).toHaveLength(0);
     });
 
+    test('purges same-scope memory copies, proposals, and source events on deletion', async () => {
+        const store = await createMemoryStore();
+        const content = 'The user prefers jasmine tea.';
+
+        const accepted = store.proposeMemory({
+            scope: 'user',
+            content,
+            kind: 'preference',
+        });
+        store.reviewProposal(accepted.id, 'approve');
+
+        const rejected = store.proposeMemory({
+            scope: 'user',
+            content,
+            kind: 'preference',
+        });
+        store.reviewProposal(rejected.id, 'reject');
+
+        const pending = store.proposeMemory({
+            scope: 'user',
+            content,
+            kind: 'fact',
+        });
+
+        const otherScope = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'chat-keep',
+            content,
+            kind: 'fact',
+        });
+        store.reviewProposal(otherScope.id, 'approve');
+
+        const acceptedMemory = store.listMemories({ scope: 'user' }).find(memory => memory.content === content);
+        expect(acceptedMemory).toBeDefined();
+        expect(store.deleteMemory(acceptedMemory.id)).toBe(true);
+
+        expect(store.listMemories({ scope: 'user' }).some(memory => memory.content === content)).toBe(false);
+        expect(store.searchMemories({ query: 'jasmine tea', scope: 'user' }).some(memory => memory.content === content)).toBe(false);
+        for (const status of ['pending', 'approved', 'rejected']) {
+            expect(store.listProposals({ status }).some(proposal =>
+                proposal.scope === 'user' && proposal.content === content)).toBe(false);
+        }
+        expect(store.listEvents({
+            scope: 'user',
+            scopeId: '',
+            eventTypes: ['memory.proposal_created'],
+        }).some(event => event.content === content)).toBe(false);
+
+        // The exact same text in another scope is an independent record.
+        expect(store.searchMemories({
+            query: 'jasmine tea',
+            scope: 'chat',
+            activeChatId: 'chat-keep',
+        }).some(memory => memory.content === content)).toBe(true);
+        expect(store.listEvents({
+            scope: 'chat',
+            scopeId: 'chat-keep',
+            eventTypes: ['memory.proposal_created'],
+        }).some(event => event.content === content)).toBe(true);
+
+        const audit = store.listEvents({
+            scope: 'user',
+            scopeId: '',
+            eventTypes: ['memory.deleted'],
+        });
+        expect(audit).toHaveLength(1);
+        expect(audit[0].content).not.toContain(content);
+        expect(audit[0].metadata.purgedProposals).toBe(3);
+        expect(audit[0].metadata.purgedSourceEvents).toBe(3);
+        expect(pending.status).toBe('pending');
+    });
+
     test('hybrid ranking favors exact phrases and multi-term coverage', async () => {
         const store = await createMemoryStore();
         const partial = store.proposeMemory({
