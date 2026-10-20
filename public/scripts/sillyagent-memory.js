@@ -205,7 +205,11 @@ async function refreshPanel(runtime) {
     try {
         await requestApi(runtime, '/memory/settings');
         const ids = contextIds(runtime);
-        const proposalResponse = await requestApi(runtime, '/memory/proposals');
+        const proposalParams = new URLSearchParams();
+        if (ids.activeCharacterId) proposalParams.set('activeCharacterId', ids.activeCharacterId);
+        if (ids.activeChatId) proposalParams.set('activeChatId', ids.activeChatId);
+        const proposalQuery = proposalParams.toString();
+        const proposalResponse = await requestApi(runtime, '/memory/proposals' + (proposalQuery ? '?' + proposalQuery : ''));
         const summary = proposalResponse.summary || {};
         const payloads = [];
         if (ids.activeCharacterId) {
