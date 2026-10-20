@@ -129,7 +129,8 @@ async function loadAcceptedMemories() {
     if (ids.activeChatId) {
         const chatParams = new URLSearchParams({
             scope: 'chat',
-            scopeId: ids.activeChatId,
+            activeChatId: ids.activeChatId,
+            ...(ids.activeCharacterId ? { activeCharacterId: ids.activeCharacterId } : {}),
             limit: '100',
         });
         requests.push(requestApi('/memory/list?' + chatParams.toString()));
@@ -167,7 +168,10 @@ async function clearCapturedHistory() {
     try {
         const result = await requestApi('/memory/capture-history/clear', {
             method: 'POST',
-            body: JSON.stringify({ activeChatId: ids.activeChatId }),
+            body: JSON.stringify({
+                activeChatId: ids.activeChatId,
+                activeCharacterId: ids.activeCharacterId,
+            }),
         });
         setStatus('Cleared ' + result.clearedTurns + ' captured turns. Existing memories and proposals were kept.');
         await refreshPanel();
