@@ -316,6 +316,8 @@ describe('agent tools API', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                activeChatId: 'chat-attic-test',
+                activeCharacterId: 'julia-card.png',
                 name: 'memory_propose',
                 arguments: { content: 'A brass telescope belongs in the attic.', kind: 'fact' },
             }),
@@ -323,19 +325,19 @@ describe('agent tools API', () => {
         const proposed = await proposalResponse.json();
         expect(proposalResponse.status).toBe(200);
         expect(proposed.result.requiresReview).toBe(false);
-        expect(proposed.result.scope).toBe('user');
+        expect(proposed.result.scope).toBe('character');
         expect(proposed.result.memory.content).toBe('A brass telescope belongs in the attic.');
 
-        const listResponse = await fetch(baseUrl + '/memory/list');
+        const listResponse = await fetch(baseUrl + '/memory/list?scope=character&scopeId=julia-card.png');
         const listed = await listResponse.json();
         const memory = listed.memories.find(item => item.content === 'A brass telescope belongs in the attic.');
         expect(memory).toBeDefined();
-        expect(memory.scope).toBe('user');
+        expect(memory.scope).toBe('character');
 
         const retrievalResponse = await fetch(baseUrl + '/retrieve-context', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: 'brass telescope', limit: 3 }),
+            body: JSON.stringify({ query: 'brass telescope', limit: 3, activeChatId: 'chat-attic-test', activeCharacterId: 'julia-card.png' }),
         });
         const retrieval = await retrievalResponse.json();
         expect(retrievalResponse.status).toBe(200);
@@ -344,13 +346,13 @@ describe('agent tools API', () => {
 
         const deleteResponse = await fetch(baseUrl + '/memory/' + memory.id, { method: 'DELETE' });
         expect(deleteResponse.status).toBe(200);
-        const finalListResponse = await fetch(baseUrl + '/memory/list?scope=user');
+        const finalListResponse = await fetch(baseUrl + '/memory/list?scope=character&scopeId=julia-card.png');
         const finalList = await finalListResponse.json();
         expect(finalList.memories.some(item => item.id === memory.id)).toBe(false);
         const afterDeleteRetrievalResponse = await fetch(baseUrl + '/retrieve-context', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: 'brass telescope', limit: 3 }),
+            body: JSON.stringify({ query: 'brass telescope', limit: 3, activeChatId: 'chat-attic-test', activeCharacterId: 'julia-card.png' }),
         });
         const afterDeleteRetrieval = await afterDeleteRetrievalResponse.json();
         expect(afterDeleteRetrieval.memories.some(item => item.content === 'A brass telescope belongs in the attic.')).toBe(false);
