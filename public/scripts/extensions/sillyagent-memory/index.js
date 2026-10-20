@@ -222,9 +222,24 @@ async function retrieveContext(query) {
 }
 
 function enableAutomaticToolCalling() {
-    if (!oai_settings || oai_settings.function_calling) return;
-    oai_settings.function_calling = true;
-    saveSettingsDebounced();
+    if (!oai_settings) return;
+    let changed = false;
+
+    if (!oai_settings.function_calling) {
+        oai_settings.function_calling = true;
+        changed = true;
+    }
+
+    // SillyTavern prompt post-processors that rewrite/drop tool calls break the
+    // native tool loop. Automatically select a compatible mode instead of
+    // requiring the user to find and change another setting manually.
+    const toolCompatibleModes = new Set(['none', 'merge_tools', 'semi_tools', 'strict_tools']);
+    if (!toolCompatibleModes.has(oai_settings.custom_prompt_post_processing)) {
+        oai_settings.custom_prompt_post_processing = 'none';
+        changed = true;
+    }
+
+    if (changed) saveSettingsDebounced();
 }
 
 function insertAutonomousMemoryInstructions(chat) {
