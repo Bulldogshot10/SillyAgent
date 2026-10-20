@@ -17,7 +17,7 @@ const AUTONOMOUS_MEMORY_MARKER = '[SILLYAGENT_AUTONOMOUS_MEMORY_V1]';
 const AUTONOMOUS_MEMORY_INSTRUCTIONS = [
     AUTONOMOUS_MEMORY_MARKER,
     'Use SillyAgent memory tools autonomously. Never ask the user to select a memory scope, approve ordinary memories, or manually trigger a memory operation.',
-    'Search memory when prior facts are relevant. Save durable information as soon as it emerges, without waiting for the user to ask: stable user facts, preferences, and long-term goals belong in user scope; this character’s identity, backstory, and character-specific relationship continuity belong in character scope; temporary task, debugging, or current conversation state belongs in chat scope.',
+    'Call sillyagent_memory_search when prior facts are relevant and not already available in the injected context. Save durable information as soon as it emerges, without waiting for the user to ask: stable user facts, preferences, and long-term goals belong in user scope; this character’s identity, backstory, and character-specific relationship continuity belong in character scope; temporary task, debugging, or current conversation state belongs in chat scope.',
     'Use sillyagent_memory_propose with a concise, self-contained memory and an appropriate kind/importance. The scope is optional when unclear because the server will infer it. Avoid duplicates, one-off trivia, credentials, secrets, and unnecessary sensitive detail.',
     'Let memory operations happen in the background and continue answering the user naturally. Do not announce routine memory writes unless relevant to the conversation.',
 ].join(' ');
@@ -136,7 +136,7 @@ async function clearCapturedHistory() {
         return;
     }
     const confirmed = window.confirm(
-        'Clear captured raw turns for this chat? Approved memories and existing proposals will remain until you remove them separately.',
+        'Clear captured raw turns for this chat? Accepted memories are kept.',
     );
     if (!confirmed) return;
     const button = document.getElementById('sa_memory_clear_captured');
