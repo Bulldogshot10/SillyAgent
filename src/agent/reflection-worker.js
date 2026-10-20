@@ -140,7 +140,7 @@ function applyMemoryCandidates(store, job, candidates, events) {
 }
 
 function applySkillCandidates(skillStore, job, candidates, events) {
-    if (!job.characterId || events.length < 2) return [];
+    if (!skillStore || !job.characterId || events.length < 2) return [];
     const byId = new Map(events.map(event => [event.id, event]));
     const accepted = [];
     for (const candidate of candidates) {
@@ -174,7 +174,7 @@ function applySkillCandidates(skillStore, job, candidates, events) {
     return accepted;
 }
 
-async function processOneJob({ store, directories, getSkillStore }) {
+export async function runReflectionWorkerOnce({ store, directories, getSkillStore }) {
     const state = getReflectionProviderState(directories);
     if (!state.enabled || !state.configured || !state.credentialAvailable) return false;
 
@@ -195,8 +195,14 @@ async function processOneJob({ store, directories, getSkillStore }) {
         const response = await requestReflectionCompletion({ directories, config: state, messages });
         const result = parseModelJson(response);
         const memoriesAccepted = applyMemoryCandidates(store, job, result.memories, events);
-        const skillStore = await getSkillStore();
-        const skillsCreated = applySkillCandidates(skillStore, job, result.skills, events);
+        let skillsCreated = [];
+        try {
+            const skillStore = await getSkillStore();
+            skillsCreated = applySkillCandidates(skillStore, job, result.skills, events);
+        } catch (error) {
+            // Memory extraction remains useful even if the skill database is unavailable.
+            console.warn('[SillyAgent reflection] Skill updates skipped:', error?.message || error);
+        }
         store.recordEvent({
             scope: 'chat',
             scopeId: job.scopeId,
@@ -244,7 +250,7 @@ export function startReflectionWorker({ store, directories, getSkillStore }) {
         if (stopped || active) return;
         active = true;
         try {
-            await processOneJob({ store, directories, getSkillStore });
+            await runReflectionWorkerOnce({ store, directories, getSkillStore });
         } catch (error) {
             console.warn('[SillyAgent reflection] Worker tick failed:', error?.message || error);
         } finally {
