@@ -12,6 +12,14 @@ let userRoot;
 const memoryProposalsEnvKey = 'SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED';
 let previousMemoryProposalsEnv;
 
+async function postJson(url, body) {
+    return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
+
 beforeAll(async () => {
     previousMemoryProposalsEnv = process.env[memoryProposalsEnvKey];
     process.env[memoryProposalsEnvKey] = 'true';
