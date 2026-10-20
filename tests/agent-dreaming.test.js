@@ -65,6 +65,30 @@ describe('DreamingEngine', () => {
         expect(memoryStore.searchMemories({ query: 'copper moon', scope: 'chat', activeChatId: 'review-chat' })).toHaveLength(0);
     });
 
+
+    test('automatically uses character scope for a repeated topic across that character chats', async () => {
+        const memoryStore = await createStore();
+        const turns = [
+            { chatId: 'julia-chat-1', role: 'user', content: 'We keep returning to the silver key mystery.' },
+            { chatId: 'julia-chat-2', role: 'assistant', content: 'The silver key mystery matters to this story.' },
+            { chatId: 'julia-chat-2', role: 'user', content: 'I want to solve the silver key mystery next.' },
+        ];
+        turns.forEach((turn, index) => memoryStore.captureTurn({
+            scopeId: turn.chatId,
+            role: turn.role,
+            content: turn.content,
+            captureKey: 'character-cross-chat-' + index,
+            metadata: { characterId: 'julia.png' },
+        }));
+
+        const dream = new DreamingEngine(memoryStore).run({ scopeId: 'julia-chat-2' });
+        const memories = memoryStore.listMemories({ scope: 'all' });
+        expect(dream.globalEventsReviewed).toBe(3);
+        expect(memories.some(memory => memory.scope === 'character'
+            && memory.scopeId === 'julia.png'
+            && memory.content.includes('silver key'))).toBe(true);
+    });
+
     test('does not dream across chat scopes', async () => {
         const memoryStore = await createStore();
         memoryStore.captureTurn({
