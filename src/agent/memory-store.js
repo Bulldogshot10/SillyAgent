@@ -494,26 +494,31 @@ export class MemoryStore {
         const conditions = [];
         const scopeParams = [];
 
-        if (scope === 'user') {
-            conditions.push('m.scope = \'user\'');
+        if (scope === 'user' || scope === 'character') {
+            // "User" scope is retained for storage compatibility only. A user-memory
+            // lookup resolves to the active character's partition; it never reads a
+            // global pool shared by unrelated characters.
+            if (typeof activeCharacterId !== 'string' || !activeCharacterId) return [];
+            conditions.push('m.scope = \'character\' AND m.scope_id = ?');
+            scopeParams.push(activeCharacterId);
         } else if (scope === 'chat') {
             if (typeof activeChatId !== 'string' || !activeChatId) return [];
             conditions.push('m.scope = \'chat\' AND m.scope_id = ?');
             scopeParams.push(activeChatId);
-        } else if (scope === 'character') {
-            if (typeof activeCharacterId !== 'string' || !activeCharacterId) return [];
-            conditions.push('m.scope = \'character\' AND m.scope_id = ?');
-            scopeParams.push(activeCharacterId);
         } else {
-            conditions.push('m.scope = \'user\'');
+            // Relevant search is intentionally character-isolated: current chat
+            // + active character only. Legacy global user records are not retrieved.
+            const relevantConditions = [];
             if (typeof activeChatId === 'string' && activeChatId) {
-                conditions.push('(m.scope = \'chat\' AND m.scope_id = ?)');
+                relevantConditions.push('(m.scope = \'chat\' AND m.scope_id = ?)');
                 scopeParams.push(activeChatId);
             }
             if (typeof activeCharacterId === 'string' && activeCharacterId) {
-                conditions.push('(m.scope = \'character\' AND m.scope_id = ?)');
+                relevantConditions.push('(m.scope = \'character\' AND m.scope_id = ?)');
                 scopeParams.push(activeCharacterId);
             }
+            if (!relevantConditions.length) return [];
+            conditions.push(...relevantConditions);
         }
 
         const matchQueries = [
