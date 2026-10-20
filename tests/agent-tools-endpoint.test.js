@@ -383,9 +383,6 @@ describe('agent tools API', () => {
 
         const summaryBefore = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
         const juliaSummaryBefore = (await summaryBefore.json()).summary;
-        const summaryAfter = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
-        const juliaSummaryAfter = (await summaryAfter.json()).summary;
-        expect(juliaSummaryAfter).toEqual(juliaSummaryBefore);
 
         const otherProposalResponse = await postJson(baseUrl + '/execute', {
             activeChatId: 'bella-chat-test',
@@ -396,6 +393,10 @@ describe('agent tools API', () => {
         const otherProposal = await otherProposalResponse.json();
         expect(otherProposal.result.memory.scope).toBe('character');
         expect(otherProposal.result.memory.scopeId).toBe('bella-card.png');
+
+        const summaryAfter = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
+        const juliaSummaryAfter = (await summaryAfter.json()).summary;
+        expect(juliaSummaryAfter).toEqual(juliaSummaryBefore);
 
         const crossCharacterDelete = await fetch(
             baseUrl + '/memory/' + encodeURIComponent(otherProposal.result.memory.id)
