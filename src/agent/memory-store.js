@@ -664,22 +664,35 @@ export class MemoryStore {
     }
 
     /**
-     * List accepted memories from exactly one scope.
+     * List accepted memories from one scope or all scopes.
      * @param {object} options Scope and filtering options.
      * @returns {object[]} Accepted memories.
      */
-    listMemories({ scope = 'user', scopeId = '', query = '', limit = 50 } = {}) {
-        const target = normalizeScope(scope, scopeId);
+    listMemories({ scope = 'all', scopeId = '', query = '', limit = 50 } = {}) {
         if (typeof query !== 'string' || query.length > 300) {
             throw new TypeError('Memory filter must be a string of 300 characters or fewer.');
         }
+        if (!['all', 'user', 'character', 'chat'].includes(scope)) {
+            throw new TypeError('Memory list scope must be all, user, character, or chat.');
+        }
         const safeLimit = Math.max(1, Math.min(100, Number.isInteger(limit) ? limit : 50));
         const normalizedQuery = query.trim();
-        const sql = 'SELECT * FROM memories WHERE scope = ? AND scope_id = ?' +
-            (normalizedQuery ? ' AND instr(lower(content), lower(?)) > 0' : '') +
-            ' ORDER BY updated_at DESC LIMIT ?';
-        const params = [target.scope, target.scopeId];
-        if (normalizedQuery) params.push(normalizedQuery);
+        const conditions = [];
+        const params = [];
+
+        if (scope !== 'all') {
+            const target = normalizeScope(scope, scopeId);
+            conditions.push('scope = ?', 'scope_id = ?');
+            params.push(target.scope, target.scopeId);
+        }
+        if (normalizedQuery) {
+            conditions.push('instr(lower(content), lower(?)) > 0');
+            params.push(normalizedQuery);
+        }
+
+        const sql = 'SELECT * FROM memories'
+            + (conditions.length ? ' WHERE ' + conditions.join(' AND ') : '')
+            + ' ORDER BY updated_at DESC LIMIT ?';
         params.push(safeLimit);
         return this.#db.prepare(sql).all(...params).map(row => ({
             ...toMemory(row),
