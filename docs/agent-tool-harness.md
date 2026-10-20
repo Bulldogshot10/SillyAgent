@@ -48,7 +48,7 @@ Unit and endpoint tests live under `tests/`. The `SillyAgent CI` GitHub Actions 
 
 ## Persistent memory engine (initial vertical slice)
 
-The memory store uses Node's built-in SQLite API plus SQLite FTS5. Each user's database lives under that user's data root at `sillyagent/memory.sqlite`. This feature requires Node.js 22.5+ with `node:sqlite` and SQLite FTS5. If the runtime lacks SQLite support, the memory endpoints return a clear error; ordinary SillyTavern chat remains independent of this feature.
+The memory store uses Node's built-in SQLite API plus SQLite FTS5. Each user's database lives under that user's data root at `sillyagent/memory.sqlite`. This feature requires Node.js 22.5+ with `node:sqlite` and SQLite FTS5. The repository's general Node.js engine requirement remains `>=20`, so Node.js 20 and Node.js 22 versions older than 22.5 can still run the rest of SillyTavern, but persistent memory is unavailable on those runtimes. The memory store checks the runtime before creating its database directory and reports the exact feature requirement; ordinary chat remains independent of this feature.
 
 Memories are scoped to a user, character, or chat. Relevant retrieval includes user-level memories plus memories for the active chat and character supplied by the browser. It does not search other chats or characters by default. Only approved memories are indexed.
 
