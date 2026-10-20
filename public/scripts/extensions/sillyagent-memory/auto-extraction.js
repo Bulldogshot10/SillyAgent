@@ -73,6 +73,28 @@ export function buildAutonomousExtractionPrompt(messages, existingMemories = [],
 }
 
 /**
+ * Whether a background model response contains the expected structured payload.
+ * Invalid output must be retried instead of silently completing a queued job.
+ * @param {string} responseText Model response.
+ * @returns {boolean} Whether the response is a valid extraction payload.
+ */
+export function isValidAutonomousExtraction(responseText) {
+    if (typeof responseText !== 'string' || !responseText.trim()) return false;
+    const text = responseText.trim()
+        .replace(/^\`\`\`(?:json)?\s*/iu, '')
+        .replace(/\s*\`\`\`$/u, '');
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start < 0 || end < start) return false;
+    try {
+        const parsed = JSON.parse(text.slice(start, end + 1));
+        return !!parsed && Array.isArray(parsed.memories);
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Parse and validate background extraction output before any database write.
  * @param {string} responseText Model response.
  * @param {Array<{content: string}>} existingMemories Previously stored memories.
