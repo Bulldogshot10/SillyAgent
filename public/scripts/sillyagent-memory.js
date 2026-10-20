@@ -203,7 +203,6 @@ async function refreshPanel(runtime) {
         const ids = contextIds(runtime);
         const proposalResponse = await requestApi(runtime, '/memory/proposals');
         const summary = proposalResponse.summary || {};
-        let captured = 0;
         const payloads = [];
         if (ids.activeCharacterId) {
             const params = new URLSearchParams({ scope: 'character', scopeId: ids.activeCharacterId, limit: '100' });
@@ -274,12 +273,8 @@ export function initSillyAgentMemory(runtime) {
     runtime.eventSource.on(runtime.eventTypes.CHARACTER_MESSAGE_RENDERED, (index, type) => {
         void captureTurn(runtime, index, 'assistant', type);
     });
-    runtime.eventSource.on(runtime.eventTypes.CHAT_COMPLETION_PROMPT_READY, eventData => {
-        void onChatPromptReady(runtime, eventData);
-    });
-    runtime.eventSource.on(runtime.eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, eventData => {
-        void onTextPromptReady(runtime, eventData);
-    });
+    runtime.eventSource.on(runtime.eventTypes.CHAT_COMPLETION_PROMPT_READY, eventData => onChatPromptReady(runtime, eventData));
+    runtime.eventSource.on(runtime.eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, eventData => onTextPromptReady(runtime, eventData));
     runtime.eventSource.on(runtime.eventTypes.CHAT_CHANGED, () => void refreshPanel(runtime));
     runtime.eventSource.on(runtime.eventTypes.CHAT_LOADED, () => void refreshPanel(runtime));
 
