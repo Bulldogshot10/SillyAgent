@@ -149,7 +149,8 @@ function applyMemoryCandidates(store, job, candidates, events, existingMemories)
         if (!validString(candidate?.content, 4000) || containsCredential(candidate.content)
             || !validEvidenceIds(candidate, evidenceIds) || !ALLOWED_KINDS.has(candidate.kind)
             || !['character', 'chat'].includes(candidate.scope)
-            || (candidate.scope === 'character' && !job.characterId)) continue;
+            || (candidate.scope === 'character' && !job.characterId)
+            || (job.mode === 'dream' && job.characterId && candidate.scope !== 'character')) continue;
         const target = candidateMemoryScope(candidate, job);
         if (!target.scopeId) continue;
         const supersedesIds = candidate.supersedesMemoryIds === undefined ? [] : candidate.supersedesMemoryIds;
@@ -263,12 +264,14 @@ export async function runReflectionWorkerOnce({ store, directories, getSkillStor
         const result = parseModelJson(response);
         const memoriesAccepted = applyMemoryCandidates(store, job, result.memories, events, existingMemories);
         let skillsCreated = [];
-        try {
-            const skillStore = await getSkillStore();
-            skillsCreated = applySkillCandidates(skillStore, job, result.skills, events);
-        } catch (error) {
-            // Memory extraction remains useful even if the skill database is unavailable.
-            console.warn('[SillyAgent reflection] Skill updates skipped:', error?.message || error);
+        if (job.characterId) {
+            try {
+                const skillStore = await getSkillStore(job.characterId);
+                skillsCreated = applySkillCandidates(skillStore, job, result.skills, events);
+            } catch (error) {
+                // Memory extraction remains useful even if the character skill database is unavailable.
+                console.warn('[SillyAgent reflection] Skill updates skipped:', error?.message || error);
+            }
         }
         store.recordEvent({
             scope: 'chat',
