@@ -301,7 +301,7 @@ describe('agent tools API', () => {
         expect(second.capturedCount).toBe(1);
     });
 
-    test('enforces autonomous settings, deduplicates captures, and dreams automatically', async () => {
+    test('enforces autonomous settings and queues post-assistant-turn reviews without count triggers', async () => {
         const initialResponse = await fetch(baseUrl + '/memory/settings');
         const initial = await initialResponse.json();
         expect(initial.settings.autoRetrieveEnabled).toBe(true);
@@ -362,8 +362,8 @@ describe('agent tools API', () => {
             expect(finalCapture.captured).toBe(true);
         }
         expect(finalCapture.capturedCount).toBe(12);
-        expect(finalCapture.queuedReflection.created).toBe(true);
-        expect(finalCapture.queuedReflection.job.mode).toBe('dream');
+        expect(finalCapture.queuedReflection.coalesced).toBe(true);
+        expect(finalCapture.queuedReflection.job.mode).toBe('extract');
         expect(finalCapture.queuedReflection.job.status).toBe('pending');
         const queueStatusResponse = await fetch(baseUrl
             + '/memory/reflection-jobs/status?activeCharacterId=julia-card.png&activeChatId=dream-test-chat');
@@ -493,7 +493,7 @@ describe('agent tools API', () => {
         expect(afterDeleteRetrieval.memories.some(item => item.content === 'A brass telescope belongs in the attic.')).toBe(false);
     });
 
-    test('queues persisted extraction and dreaming jobs for the native server worker only', async () => {
+    test('coalesces persisted post-turn reviews for the native server worker only', async () => {
         const characterId = 'auto-memory-character.png';
         const chatId = 'auto-memory-chat.jsonl';
         const roles = ['user', 'assistant', 'user', 'assistant', 'user', 'assistant',
@@ -514,18 +514,19 @@ describe('agent tools API', () => {
             captureResults.push(await response.json());
         }
 
-        expect(captureResults[3].queuedReflection.created).toBe(true);
+        expect(captureResults[1].queuedReflection.created).toBe(true);
+        expect(captureResults[3].queuedReflection.coalesced).toBe(true);
         expect(captureResults[3].queuedReflection.job.mode).toBe('extract');
-        expect(captureResults[7].queuedReflection.created).toBe(true);
+        expect(captureResults[7].queuedReflection.coalesced).toBe(true);
         expect(captureResults[7].queuedReflection.job.mode).toBe('extract');
-        expect(captureResults[11].queuedReflection.created).toBe(true);
-        expect(captureResults[11].queuedReflection.job.mode).toBe('dream');
+        expect(captureResults[11].queuedReflection.coalesced).toBe(true);
+        expect(captureResults[11].queuedReflection.job.mode).toBe('extract');
 
         const queueStatusResponse = await fetch(baseUrl
             + '/memory/reflection-jobs/status?activeCharacterId=' + encodeURIComponent(characterId)
             + '&activeChatId=' + encodeURIComponent(chatId));
         const queueStatus = await queueStatusResponse.json();
-        expect(queueStatus.jobs.pending).toBeGreaterThanOrEqual(3);
+        expect(queueStatus.jobs.pending).toBe(1);
 
         expect((await postJson(baseUrl + '/memory/reflection-jobs/claim', {
             activeChatId: chatId,
