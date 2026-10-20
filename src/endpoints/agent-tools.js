@@ -47,10 +47,18 @@ async function getMemoryStore(request) {
     return await getAgentMemoryStore(directories);
 }
 
-async function getSkillStore(request) {
+async function getSkillStore(request, explicitCharacterId = null) {
     const root = request.user?.directories?.root ?? globalThis.DATA_ROOT;
     const directories = request.user?.directories ?? { root };
-    return await getAgentSkillStore(directories);
+    const characterId = getSafeContextId(
+        explicitCharacterId
+        ?? request.body?.activeCharacterId
+        ?? request.query?.activeCharacterId,
+    );
+    if (!characterId) {
+        throw new Error('Agent skills require an active character. Select a character before reading or changing procedural memory.');
+    }
+    return await getAgentSkillStore(directories, characterId);
 }
 
 function getEffectiveSkillSettings(store) {
@@ -139,7 +147,9 @@ router.get('/skills/settings', async (request, response) => {
 router.post('/skills/settings', async (request, response) => {
     try {
         const store = await getSkillStore(request);
-        store.updateSettings(request.body ?? {});
+        const settingsInput = { ...(request.body ?? {}) };
+        delete settingsInput.activeCharacterId;
+        store.updateSettings(settingsInput);
         return response.json({ ok: true, settings: getEffectiveSkillSettings(store) });
     } catch (error) {
         return response.status(400).json({
