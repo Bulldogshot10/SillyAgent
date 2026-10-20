@@ -4,7 +4,7 @@ import {
     formatMemoryContext,
     hasMemoryContext,
     insertMemoryContext,
-} from '../public/scripts/extensions/sillyagent-memory/memory-context.js';
+} from '../public/scripts/sillyagent-memory-context.js';
 
 describe('memory prompt context', () => {
     test('places memory context at user level after trusted instructions', () => {
