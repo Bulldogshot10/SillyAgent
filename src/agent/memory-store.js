@@ -191,6 +191,7 @@ export class MemoryStore {
         const database = new DatabaseSync(databasePath);
         try {
             const store = new MemoryStore(database);
+            store.migrateLegacyUserMemories();
             if (databasePath !== ':memory:') {
                 await secureMemoryStorage(databasePath);
             }
@@ -453,6 +454,212 @@ export class MemoryStore {
             this.#db.exec('ROLLBACK;');
             throw error;
         }
+    }
+
+    /**
+     * Automatically migrate legacy global user memories into character partitions.
+     *
+     * Ownership is resolved from existing character metadata first, then by
+     * correlation with captured turns near the original write timestamp. If the
+     * owner is ambiguous, the record stays quarantined in legacy user scope and
+     * automatic retrieval never sees it.
+     *
+     * @param {object} options Migration bounds.
+     * @returns {{migrated: number, merged: number, unresolved: number}} Migration counts.
+     */
+    migrateLegacyUserMemories({ correlationWindowMs = 180000 } = {}) {
+        const windowMs = Math.max(10000, Math.min(600000,
+            Number.isInteger(correlationWindowMs) ? correlationWindowMs : 180000));
+        const userMemories = this.#db.prepare(
+            "SELECT * FROM memories WHERE scope = 'user' AND scope_id = '' ORDER BY created_at ASC",
+        ).all();
+        const userProposals = this.#db.prepare(
+            "SELECT * FROM memory_proposals WHERE scope = 'user' AND scope_id = '' ORDER BY created_at ASC",
+        ).all();
+
+        const knownCharacterIds = new Set();
+        for (const row of this.#db.prepare(
+            "SELECT scope_id AS character_id FROM memories WHERE scope = 'character' AND scope_id != '' " +
+            "UNION SELECT scope_id AS character_id FROM memory_proposals WHERE scope = 'character' AND scope_id != ''",
+        ).all()) {
+            knownCharacterIds.add(row.character_id);
+        }
+
+        const capturedTurns = this.#db.prepare(
+            "SELECT id, scope_id, metadata_json, created_at FROM memory_events " +
+            "WHERE scope = 'chat' AND event_type IN ('chat.user_turn', 'chat.assistant_turn')",
+        ).all().map(row => {
+            const metadata = parseMetadata(row.metadata_json);
+            const characterId = typeof metadata.characterId === 'string' ? metadata.characterId.trim() : '';
+            if (characterId) knownCharacterIds.add(characterId);
+            return { ...row, characterId };
+        }).filter(row => row.characterId);
+
+        const eventById = this.#db.prepare('SELECT * FROM memory_events WHERE id = ?');
+        const resolveCharacterId = (metadataJson, sourceEventId, createdAt) => {
+            const metadata = parseMetadata(metadataJson);
+            const directId = metadata.characterId ?? metadata.activeCharacterId
+                ?? metadata.legacyMigration?.characterId;
+            if (typeof directId === 'string' && directId.trim()) return directId.trim();
+
+            const sourceEvent = typeof sourceEventId === 'string' && sourceEventId
+                ? eventById.get(sourceEventId)
+                : null;
+            if (sourceEvent) {
+                const sourceMetadata = parseMetadata(sourceEvent.metadata_json);
+                const sourceCharacterId = sourceMetadata.characterId ?? sourceMetadata.activeCharacterId;
+                if (typeof sourceCharacterId === 'string' && sourceCharacterId.trim()) {
+                    return sourceCharacterId.trim();
+                }
+                createdAt = sourceEvent.created_at;
+            }
+
+            const nearbyTurns = capturedTurns
+                .map(turn => ({ turn, distance: Math.abs(turn.created_at - createdAt) }))
+                .filter(item => item.distance <= windowMs)
+                .sort((left, right) => left.distance - right.distance);
+            const nearest = nearbyTurns[0];
+            if (nearest) {
+                const nearestCharacterId = nearest.turn.characterId;
+                const competingTurn = nearbyTurns.find(item => item.turn.characterId !== nearestCharacterId);
+                // Never guess between characters when the two closest contexts
+                // are nearly simultaneous. That could silently cross-contaminate memory.
+                if (!competingTurn || competingTurn.distance - nearest.distance >= 20000) {
+                    return nearestCharacterId;
+                }
+                return null;
+            }
+
+            // If the store has only ever contained one character, assigning old
+            // global memories to that sole partition is deterministic.
+            return knownCharacterIds.size === 1 ? [...knownCharacterIds][0] : null;
+        };
+
+        let migrated = 0;
+        let merged = 0;
+        let unresolved = 0;
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            for (const row of userMemories) {
+                const characterId = resolveCharacterId(row.metadata_json, row.source_event_id, row.created_at);
+                const metadata = parseMetadata(row.metadata_json);
+                if (!characterId) {
+                    if (metadata.legacyMigration?.status !== 'unresolved') {
+                        const marked = {
+                            ...metadata,
+                            legacyMigration: {
+                                status: 'unresolved',
+                                reason: 'Character provenance could not be determined without risking cross-character leakage.',
+                                checkedAt: Date.now(),
+                            },
+                        };
+                        this.#db.prepare('UPDATE memories SET metadata_json = ? WHERE id = ?')
+                            .run(serializeMetadata(marked), row.id);
+                    }
+                    unresolved++;
+                    continue;
+                }
+
+                const nextMetadata = serializeMetadata({
+                    ...metadata,
+                    legacyMigration: {
+                        status: 'migrated',
+                        fromScope: 'user',
+                        toScope: 'character',
+                        characterId,
+                        method: metadata.characterId || metadata.activeCharacterId
+                            ? 'stored-character-metadata'
+                            : 'captured-turn-correlation',
+                        migratedAt: Date.now(),
+                    },
+                });
+                const existingTarget = this.#db.prepare(
+                    "SELECT * FROM memories WHERE scope = 'character' AND scope_id = ? AND kind = ? AND content = ?",
+                ).get(characterId, row.kind, row.content);
+
+                this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(row.id);
+                this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(row.id);
+
+                if (existingTarget) {
+                    this.#db.prepare(
+                        'UPDATE memories SET importance = MAX(importance, ?), updated_at = MAX(updated_at, ?) WHERE id = ?',
+                    ).run(row.importance, row.updated_at, existingTarget.id);
+                    this.#db.prepare("DELETE FROM memories WHERE id = ?").run(row.id);
+                    const updated = this.#db.prepare('SELECT * FROM memories WHERE id = ?').get(existingTarget.id);
+                    this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(updated.id);
+                    this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(updated.id);
+                    this.#db.prepare(
+                        'INSERT INTO memory_fts(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
+                    ).run(updated.id, updated.scope, updated.scope_id, updated.content);
+                    this.#db.prepare(
+                        'INSERT INTO memory_fts_trigram(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
+                    ).run(updated.id, updated.scope, updated.scope_id, updated.content);
+                    merged++;
+                } else {
+                    this.#db.prepare(
+                        "UPDATE memories SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?",
+                    ).run(characterId, nextMetadata, row.id);
+                    const updated = this.#db.prepare('SELECT * FROM memories WHERE id = ?').get(row.id);
+                    this.#db.prepare(
+                        'INSERT INTO memory_fts(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
+                    ).run(updated.id, updated.scope, updated.scope_id, updated.content);
+                    this.#db.prepare(
+                        'INSERT INTO memory_fts_trigram(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
+                    ).run(updated.id, updated.scope, updated.scope_id, updated.content);
+                    migrated++;
+                }
+
+                // Move the proposal and source event that created this accepted
+                // memory along with it so its history follows the same owner.
+                if (row.source_event_id) {
+                    const source = eventById.get(row.source_event_id);
+                    if (source?.scope === 'user') {
+                        const sourceMetadata = serializeMetadata({
+                            ...parseMetadata(source.metadata_json),
+                            legacyMigration: { status: 'migrated', characterId, migratedAt: Date.now() },
+                        });
+                        this.#db.prepare(
+                            "UPDATE memory_events SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?",
+                        ).run(characterId, sourceMetadata, source.id);
+                    }
+                    this.#db.prepare(
+                        "UPDATE memory_proposals SET scope = 'character', scope_id = ? WHERE scope = 'user' AND source_event_id = ?",
+                    ).run(characterId, row.source_event_id);
+                }
+            }
+
+            // Pending/rejected orphan proposals may not have an accepted memory row.
+            for (const row of userProposals) {
+                const current = this.#db.prepare('SELECT scope, metadata_json FROM memory_proposals WHERE id = ?').get(row.id);
+                if (!current || current.scope !== 'user') continue;
+                const characterId = resolveCharacterId(row.metadata_json, row.source_event_id, row.created_at);
+                if (!characterId) {
+                    unresolved++;
+                    continue;
+                }
+                this.#db.prepare(
+                    "UPDATE memory_proposals SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?",
+                ).run(characterId, serializeMetadata({
+                    ...parseMetadata(row.metadata_json),
+                    legacyMigration: { status: 'migrated', characterId, migratedAt: Date.now() },
+                }), row.id);
+                if (row.source_event_id) {
+                    const source = eventById.get(row.source_event_id);
+                    if (source?.scope === 'user') {
+                        this.#db.prepare(
+                            "UPDATE memory_events SET scope = 'character', scope_id = ? WHERE id = ?",
+                        ).run(characterId, source.id);
+                    }
+                }
+                migrated++;
+            }
+
+            this.#db.exec('COMMIT;');
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+        return { migrated, merged, unresolved };
     }
 
     /**
