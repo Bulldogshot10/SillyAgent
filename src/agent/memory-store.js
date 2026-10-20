@@ -1244,7 +1244,7 @@ export class MemoryStore {
         if (safeCharacterId) {
             // Apply the character partition before LIMIT so busy characters cannot
             // evict another character's history from its dreaming window.
-            sql += " AND json_extract(metadata_json, '$.characterId') = ?";
+            sql += ' AND json_extract(metadata_json, \'$.characterId\') = ?';
             params.push(safeCharacterId);
         }
         sql += ' ORDER BY created_at DESC LIMIT ?';
@@ -1389,7 +1389,7 @@ export class MemoryStore {
             params.push(safeCharacterId);
         } else if (safeScopeId) {
             // Group chats/no-character contexts are restricted to the exact chat.
-            sql += " WHERE scope_id = ? AND character_id = ''";
+            sql += ' WHERE scope_id = ? AND character_id = \'\'';
             params.push(safeScopeId);
         }
         sql += ' GROUP BY status';
