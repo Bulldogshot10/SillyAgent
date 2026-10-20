@@ -53,6 +53,7 @@ import cacheBuster from './middleware/cacheBuster.js';
 import corsProxyMiddleware from './middleware/corsProxy.js';
 import hostWhitelistMiddleware from './middleware/hostWhitelist.js';
 import userCssMiddleware from './middleware/userCss.js';
+import { agentToolsBodyLimit } from './middleware/agent-tools-body-limit.js';
 import {
     getVersion,
     color,
@@ -107,6 +108,8 @@ app.use(helmet({
 app.use(compression());
 app.use(responseTime());
 
+// Parse agent-tools JSON with a strict limit before the global large-body parsers.
+app.use('/api/agent/tools', agentToolsBodyLimit);
 app.use(bodyParser.json({ limit: '500mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '500mb' }));
 
