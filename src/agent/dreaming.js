@@ -23,13 +23,39 @@ function getPhrases(text) {
     for (let index = 0; index < tokens.length; index++) {
         phrases.add(tokens[index]);
         if (index + 1 < tokens.length) phrases.add(tokens[index] + ' ' + tokens[index + 1]);
+        if (index + 2 < tokens.length) phrases.add(tokens[index] + ' ' + tokens[index + 1] + ' ' + tokens[index + 2]);
     }
     return phrases;
 }
 
+function getCharacterId(event) {
+    const id = event?.metadata?.characterId;
+    return typeof id === 'string' && id.trim() ? id.trim() : null;
+}
+
+function inferDreamScope(evidence, activeChatId) {
+    const chatIds = new Set(evidence.map(event => event.scopeId).filter(Boolean));
+    if (chatIds.size <= 1) {
+        return { scope: 'chat', scopeId: activeChatId, chatCount: chatIds.size };
+    }
+
+    const characterIds = evidence.map(getCharacterId);
+    const distinctCharacters = new Set(characterIds.filter(Boolean));
+    const allEvidenceFromSameCharacter = characterIds.length > 0
+        && characterIds.every(id => id && id === [...distinctCharacters][0])
+        && distinctCharacters.size === 1;
+
+    if (allEvidenceFromSameCharacter) {
+        return { scope: 'character', scopeId: [...distinctCharacters][0], chatCount: chatIds.size };
+    }
+
+    return { scope: 'user', scopeId: '', chatCount: chatIds.size };
+}
+
 /**
- * Deterministic v1 dreaming engine. It discovers recurring topics from captured turns
- * and creates reviewable proposals; it never auto-approves an inference.
+ * Autonomous v2 dreaming. It detects repeated topics in the active chat and
+ * across recently captured chats, then picks chat, character, or user scope
+ * from the evidence. It needs no manual scope selection or manual trigger.
  */
 export class DreamingEngine {
     #store;
@@ -40,41 +66,55 @@ export class DreamingEngine {
     }
 
     /**
-     * Review an active chat's captured history for recurring topics.
+     * Consolidate recent captured conversation history into durable memories.
      * @param {object} options Scope and reflection bounds.
      * @returns {object} Dreaming report.
      */
-    run({ scope = 'chat', scopeId, limit = 100, minMentions = 3, maxProposals = 5, requireApproval } = {}) {
-        if (scope !== 'chat') throw new TypeError('Dreaming v1 only supports the active chat scope.');
+    run({ scope = 'chat', scopeId, limit = 100, minMentions = 3, maxProposals = 5, requireApproval = false } = {}) {
+        if (scope !== 'chat') throw new TypeError('Dreaming is triggered from an active chat.');
         if (typeof scopeId !== 'string' || !scopeId.trim()) throw new TypeError('Dreaming requires an active chat ID.');
+
         const eventLimit = Math.max(10, Math.min(200, Number.isInteger(limit) ? limit : 100));
         const mentionsRequired = Math.max(2, Math.min(10, Number.isInteger(minMentions) ? minMentions : 3));
         const proposalLimit = Math.max(1, Math.min(10, Number.isInteger(maxProposals) ? maxProposals : 5));
-        const events = this.#store.listEvents({
+        const eventTypes = ['chat.user_turn', 'chat.assistant_turn'];
+        const currentEvents = this.#store.listEvents({
             scope: 'chat',
             scopeId,
-            eventTypes: ['chat.user_turn', 'chat.assistant_turn'],
+            eventTypes,
             limit: eventLimit,
         });
-        if (!events.length) {
-            return { scope: 'chat', eventsReviewed: 0, candidatesCreated: 0, topics: [], message: 'No captured turns are available to dream over yet.' };
+        if (!currentEvents.length) {
+            return {
+                scope: 'chat',
+                eventsReviewed: 0,
+                globalEventsReviewed: 0,
+                candidatesCreated: 0,
+                topics: [],
+                message: 'No captured turns are available to dream over yet.',
+            };
         }
 
+        // Keep a bounded global window for cross-chat learning, while always including
+        // the active chat's full analysis window even when its events fall outside it.
+        const globalEvents = this.#store.listCapturedTurnsAcrossChats({ limit: Math.max(500, eventLimit) });
+        const eventById = new Map([...globalEvents, ...currentEvents].map(event => [event.id, event]));
+        const historyEvents = [...eventById.values()].sort((left, right) => left.createdAt - right.createdAt);
         const evidenceByPhrase = new Map();
-        for (const event of events) {
+
+        for (const event of historyEvents) {
             for (const phrase of getPhrases(event.content)) {
-                if (!evidenceByPhrase.has(phrase)) evidenceByPhrase.set(phrase, new Set());
-                evidenceByPhrase.get(phrase).add(event.id);
+                if (!evidenceByPhrase.has(phrase)) evidenceByPhrase.set(phrase, new Map());
+                evidenceByPhrase.get(phrase).set(event.id, event);
             }
         }
+
         const candidates = [...evidenceByPhrase.entries()]
             .filter(([phrase, evidence]) => evidence.size >= mentionsRequired && phrase.length >= 4)
-            .map(([phrase, evidence]) => ({ phrase, evidence: [...evidence] }))
+            .map(([phrase, evidence]) => ({ phrase, evidence: [...evidence.values()] }))
             .sort((left, right) => {
-                const leftWords = left.phrase.split(' ').length;
-                const rightWords = right.phrase.split(' ').length;
                 return right.evidence.length - left.evidence.length
-                    || rightWords - leftWords
+                    || right.phrase.split(' ').length - left.phrase.split(' ').length
                     || left.phrase.localeCompare(right.phrase);
             });
 
@@ -87,21 +127,35 @@ export class DreamingEngine {
 
         const proposals = [];
         for (const candidate of selected) {
-            const content = 'Recurring topic in this chat: ' + candidate.phrase + '.';
-            if (this.#store.hasMemoryOrPending({ scope: 'chat', scopeId, kind: 'event', content })) continue;
-            proposals.push(this.#store.proposeMemory({
-                scope: 'chat',
-                scopeId,
+            const target = inferDreamScope(candidate.evidence, scopeId);
+            const content = target.scope === 'chat'
+                ? 'Recurring topic in this chat: ' + candidate.phrase + '.'
+                : target.scope === 'character'
+                    ? 'Recurring topic associated with this character across conversations: ' + candidate.phrase + '.'
+                    : 'Recurring topic across conversations: ' + candidate.phrase + '.';
+
+            if (this.#store.hasMemoryOrPending({
+                scope: target.scope,
+                scopeId: target.scopeId,
                 kind: 'event',
                 content,
-                importance: 2,
+            })) continue;
+
+            proposals.push(this.#store.proposeMemory({
+                scope: target.scope,
+                scopeId: target.scopeId,
+                kind: 'event',
+                content,
+                importance: target.scope === 'chat' ? 2 : 3,
                 requireApproval,
                 metadata: {
                     origin: 'dreaming',
-                    method: 'recurring-topic-v1',
-                    confidence: Math.min(0.99, candidate.evidence.length / events.length),
-                    evidenceEventIds: candidate.evidence.slice(0, 30),
+                    method: 'recurring-topic-v2',
+                    confidence: Math.min(0.99, candidate.evidence.length / historyEvents.length),
+                    evidenceEventIds: candidate.evidence.slice(-30).map(event => event.id),
                     evidenceCount: candidate.evidence.length,
+                    evidenceChatCount: new Set(candidate.evidence.map(event => event.scopeId)).size,
+                    targetScope: target.scope,
                 },
             }));
         }
@@ -110,8 +164,13 @@ export class DreamingEngine {
             scope: 'chat',
             scopeId,
             eventType: 'dream.completed',
-            content: 'Dreaming reviewed ' + events.length + ' captured turns and created ' + proposals.length + ' memory candidates.',
-            metadata: { method: 'recurring-topic-v1', eventsReviewed: events.length, candidatesCreated: proposals.length },
+            content: 'Dreaming reviewed ' + currentEvents.length + ' active-chat turns and ' + historyEvents.length + ' captured turns across chats; created ' + proposals.length + ' memory candidates.',
+            metadata: {
+                method: 'recurring-topic-v2',
+                eventsReviewed: currentEvents.length,
+                globalEventsReviewed: historyEvents.length,
+                candidatesCreated: proposals.length,
+            },
         });
 
         const memoriesAccepted = proposals.filter(proposal => proposal.status === 'approved').length;
@@ -119,7 +178,8 @@ export class DreamingEngine {
 
         return {
             scope: 'chat',
-            eventsReviewed: events.length,
+            eventsReviewed: currentEvents.length,
+            globalEventsReviewed: historyEvents.length,
             candidatesCreated: proposals.length,
             memoriesAccepted,
             proposalsPending,
