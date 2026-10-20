@@ -168,6 +168,7 @@ describe('agent tools API', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                activeCharacterId: 'julia-card.png',
                 name: 'memory_propose',
                 arguments: { content, scope: 'user', kind: 'fact' },
             }),
@@ -178,6 +179,7 @@ describe('agent tools API', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                activeCharacterId: 'julia-card.png',
                 name: 'memory_search',
                 arguments: { query: 'boundedneedle', scope: 'user' },
             }),
