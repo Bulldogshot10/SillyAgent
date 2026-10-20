@@ -488,7 +488,7 @@ router.get('/memory/reflection-provider', async (request, response) => {
 router.post('/memory/reflection-provider', async (request, response) => {
     try {
         const directories = request.user?.directories;
-        const provider = saveReflectionProviderConfig(directories?.root, request.body ?? {});
+        saveReflectionProviderConfig(directories?.root, request.body ?? {});
         const state = getReflectionProviderState(directories);
         return response.json({ ok: true, provider: state });
     } catch (error) {
