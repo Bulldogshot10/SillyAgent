@@ -10,7 +10,7 @@ The API is mounted under `/api/agent/tools`. `GET /` returns registered roleplay
 
 The roleplay toolset includes `roleplay_roll_dice`, which uses Node's cryptographic `randomInt` and bounded integer inputs. The memory toolset includes `memory_search` and `memory_propose`. The skills toolset provides metadata search, selected-skill retrieval, and evidence-driven versioned skill proposals. Active character/chat context is supplied by native core lifecycle code and validated by the server.
 
-The memory tool never exposes a global cross-character search to the model. Relevant searches are constrained to the active character and exact active chat. Memory writes are scoped to the active character or chat, accepted automatically by the autonomous reflection path, and checked for scope consistency. Skill writes use versioned records and retain source/reason/evaluation metadata.
+The memory tool never exposes a global cross-character search to the model. Relevant searches are constrained to the active character and exact active chat. Memory writes are scoped to the active character or chat, accepted automatically by the autonomous reflection path, and checked for scope consistency. Skill writes use versioned records and retain source/reason/evaluation metadata. Skill stores are separate SQLite databases keyed by a one-way hash of the active character ID; the server refuses skill access without active-character context, and legacy unscoped skills are not merged into any character.
 
 ## Autonomous runtime
 
@@ -18,7 +18,7 @@ The same backend process owns the persistent SQLite reflection queue and worker.
 
 ## Security and validation
 
-Tool arguments are schema-validated before execution. Privileged tool permissions default to denied unless the registered tool and calling policy allow them. Memory reflection candidates must cite known evidence event IDs, stay within bounded schemas and scopes, and cannot set another character's memory partition. Credentials are resolved server-side from SillyTavern Secrets; neither secrets nor raw upstream response bodies are stored in job payloads. Skills are Markdown procedures, not executable code. Arbitrary shell execution, arbitrary JavaScript evaluation, and unrestricted file access are not built-in tools.
+Tool arguments are schema-validated before execution. Privileged tool permissions default to denied unless the registered tool and calling policy allow them. Memory reflection candidates must cite known evidence event IDs, stay within bounded schemas and scopes, and cannot set another character's memory partition. Memory deletion, proposal review, and visible summary counts are constrained to the active character and chat; global `all` listing is rejected. Credentials are resolved server-side from SillyTavern Secrets; neither secrets nor raw upstream response bodies are stored in job payloads. Skills are Markdown procedures, not executable code. Arbitrary shell execution, arbitrary JavaScript evaluation, and unrestricted file access are not built-in tools.
 
 ## Verification
 
