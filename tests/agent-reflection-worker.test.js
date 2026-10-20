@@ -1,3 +1,4 @@
+/* global globalThis */
 import { afterEach, beforeEach, describe, test, expect, jest } from '@jest/globals';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -232,6 +233,7 @@ describe('server-owned reflection worker', () => {
         expect(pending[0].lastError).toContain('HTTP 503');
         expect(pending[0].lastError).not.toContain('private upstream detail');
     });
+});
 
 describe('reflection provider configuration', () => {
     test('never persists an API secret and rejects embedded URL credentials', async () => {
@@ -250,6 +252,4 @@ describe('reflection provider configuration', () => {
             model: 'remote-fixture',
             secretKey: 'api_key_openai',
         })).toThrow(/must use HTTP or HTTPS and must not include embedded credentials/u);
-    });
-});
-});
+    
