@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { MemoryStore } from '../src/agent/memory-store.js';
+import { MemoryStore, supportsPersistentMemoryRuntime } from '../src/agent/memory-store.js';
 
 let stores = [];
 
@@ -19,6 +19,16 @@ afterEach(() => {
 });
 
 describe('MemoryStore', () => {
+    test('detects the persistent-memory Node.js runtime requirement', () => {
+        expect(supportsPersistentMemoryRuntime('20.19.0')).toBe(false);
+        expect(supportsPersistentMemoryRuntime('22.4.1')).toBe(false);
+        expect(supportsPersistentMemoryRuntime('22.5.0')).toBe(true);
+        expect(supportsPersistentMemoryRuntime('v22.5.0')).toBe(true);
+        expect(supportsPersistentMemoryRuntime('24.0.0')).toBe(true);
+        expect(supportsPersistentMemoryRuntime('not-a-version')).toBe(false);
+        expect(supportsPersistentMemoryRuntime(null)).toBe(false);
+    });
+
     test('keeps proposals out of retrieval until approved', async () => {
         const store = await createMemoryStore();
         const proposal = store.proposeMemory({
