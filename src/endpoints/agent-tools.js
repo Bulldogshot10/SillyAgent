@@ -32,6 +32,13 @@ function getScopedChatId(chatId, characterId) {
         .digest('hex');
 }
 
+function getScopedMemorySummary(store, activeCharacterId, scopedChatId) {
+    if (!activeCharacterId && !scopedChatId) {
+        return { events: 0, acceptedMemories: 0, pendingProposals: 0 };
+    }
+    return store.getSummary({ characterId: activeCharacterId, chatId: scopedChatId });
+}
+
 function getEnvironmentBoolean(name, fallback) {
     const value = process.env[name];
     if (value === undefined) return fallback;
@@ -298,7 +305,7 @@ router.get('/memory/proposals', async (request, response) => {
         const proposals = store.listProposals({ status: 'pending', limit: 100 }).filter(proposal =>
             (activeCharacterId && proposal.scope === 'character' && proposal.scopeId === activeCharacterId)
             || (scopedChatId && proposal.scope === 'chat' && proposal.scopeId === scopedChatId));
-        return response.json({ proposals, summary: store.getSummary() });
+        return response.json({ proposals, summary: getScopedMemorySummary(store, activeCharacterId, scopedChatId) });
     } catch (error) {
         return sendMemoryError(response, error);
     }
@@ -338,7 +345,7 @@ router.post('/memory/proposals/:id/review', async (request, response) => {
                 error: { code: 'proposal_not_found', message: 'No pending proposal exists with that ID.' },
             });
         }
-        return response.json({ ok: true, ...reviewed, summary: store.getSummary() });
+        return response.json({ ok: true, ...reviewed, summary: getScopedMemorySummary(store, activeCharacterId, activeChatId) });
     } catch (error) {
         return sendMemoryError(response, error);
     }
@@ -406,7 +413,7 @@ router.get('/memory/list', async (request, response) => {
         const store = await getMemoryStore(request);
         return response.json({
             memories: store.listMemories({ scope, scopeId, query, limit }),
-            summary: store.getSummary(),
+            summary: getScopedMemorySummary(store, activeCharacterId, getScopedChatId(activeChatId, activeCharacterId)),
         });
     } catch (error) {
         return response.status(400).json({
@@ -442,7 +449,7 @@ router.delete('/memory/:id', async (request, response) => {
                 error: { code: 'memory_not_found', message: 'No accepted memory exists with that ID.' },
             });
         }
-        return response.json({ ok: true, summary: store.getSummary() });
+        return response.json({ ok: true, summary: getScopedMemorySummary(store, activeCharacterId, activeChatId) });
     } catch (error) {
         return sendMemoryError(response, error);
     }
