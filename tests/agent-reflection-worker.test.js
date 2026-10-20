@@ -252,4 +252,5 @@ describe('reflection provider configuration', () => {
             model: 'remote-fixture',
             secretKey: 'api_key_openai',
         })).toThrow(/must use HTTP or HTTPS and must not include embedded credentials/u);
-    
+    });
+});
