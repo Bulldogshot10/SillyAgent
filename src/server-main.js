@@ -54,6 +54,10 @@ import corsProxyMiddleware from './middleware/corsProxy.js';
 import hostWhitelistMiddleware from './middleware/hostWhitelist.js';
 import userCssMiddleware from './middleware/userCss.js';
 import { agentToolsBodyLimit } from './middleware/agent-tools-body-limit.js';
+import path from 'node:path';
+import { MemoryStore } from './agent/memory-store.js';
+import { SkillStore } from './agent/skill-store.js';
+import { startReflectionWorker } from './agent/reflection-worker.js';
 import {
     getVersion,
     color,
@@ -100,6 +104,25 @@ if (!cliArgs.enableIPv6 && !cliArgs.enableIPv4) {
 // Set keep-alive preference for all HTTP/HTTPS requests.
 http.globalAgent = new http.Agent({ keepAlive: cliArgs.enableKeepAlive });
 https.globalAgent = new https.Agent({ keepAlive: cliArgs.enableKeepAlive });
+
+// SillyAgent is a first-party fork feature. Start the durable reflection
+// worker with the server, not in response to browser/extension activity.
+// Per-user stores are also initialized lazily by authenticated API access.
+if (typeof globalThis.DATA_ROOT === 'string' && globalThis.DATA_ROOT) {
+    const agentDirectories = { root: globalThis.DATA_ROOT };
+    try {
+        const agentDatabasePath = path.join(globalThis.DATA_ROOT, 'sillyagent', 'memory.sqlite');
+        const agentStore = await MemoryStore.open(agentDatabasePath);
+        startReflectionWorker({
+            store: agentStore,
+            directories: agentDirectories,
+            getSkillStore: async () => SkillStore.open(path.join(globalThis.DATA_ROOT, 'sillyagent', 'skills.sqlite')),
+        });
+    } catch (error) {
+        console.warn('[SillyAgent native worker] Startup worker unavailable:', error?.message || error);
+        console.warn('[SillyAgent native worker] Ordinary SillyTavern startup will continue; persistent memory needs Node.js 22.5+ with node:sqlite and FTS5.');
+    }
+}
 
 const app = express();
 app.use(helmet({
