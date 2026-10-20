@@ -33,23 +33,25 @@ function getCharacterId(event) {
     return typeof id === 'string' && id.trim() ? id.trim() : null;
 }
 
-function inferDreamScope(evidence, activeChatId) {
+function inferDreamScope(evidence, activeChatId, activeCharacterId = null) {
     const chatIds = new Set(evidence.map(event => event.scopeId).filter(Boolean));
     if (chatIds.size <= 1) {
         return { scope: 'chat', scopeId: [...chatIds][0] || activeChatId, chatCount: chatIds.size };
     }
 
-    const characterIds = evidence.map(getCharacterId);
-    const distinctCharacters = new Set(characterIds.filter(Boolean));
-    const allEvidenceFromSameCharacter = characterIds.length > 0
-        && characterIds.every(id => id && id === [...distinctCharacters][0])
-        && distinctCharacters.size === 1;
+    // Cross-chat consolidation is allowed only inside the active character's
+    // own partition. A user-global scope would blend unrelated character worlds.
+    const allEvidenceFromActiveCharacter = typeof activeCharacterId === 'string'
+        && activeCharacterId.length > 0
+        && evidence.length > 0
+        && evidence.every(event => getCharacterId(event) === activeCharacterId);
 
-    if (allEvidenceFromSameCharacter) {
-        return { scope: 'character', scopeId: [...distinctCharacters][0], chatCount: chatIds.size };
+    if (allEvidenceFromActiveCharacter) {
+        return { scope: 'character', scopeId: activeCharacterId, chatCount: chatIds.size };
     }
 
-    return { scope: 'user', scopeId: '', chatCount: chatIds.size };
+    // If ownership is ambiguous, keep the result local to the active chat.
+    return { scope: 'chat', scopeId: activeChatId, chatCount: chatIds.size };
 }
 
 /**
@@ -70,7 +72,7 @@ export class DreamingEngine {
      * @param {object} options Scope and reflection bounds.
      * @returns {object} Dreaming report.
      */
-    run({ scope = 'chat', scopeId, limit = 100, minMentions = 3, maxProposals = 5, requireApproval = false } = {}) {
+    run({ scope = 'chat', scopeId, activeCharacterId = null, limit = 100, minMentions = 3, maxProposals = 5, requireApproval = false } = {}) {
         if (scope !== 'chat') throw new TypeError('Dreaming is triggered from an active chat.');
         if (typeof scopeId !== 'string' || !scopeId.trim()) throw new TypeError('Dreaming requires an active chat ID.');
 
@@ -78,12 +80,16 @@ export class DreamingEngine {
         const mentionsRequired = Math.max(2, Math.min(10, Number.isInteger(minMentions) ? minMentions : 3));
         const proposalLimit = Math.max(1, Math.min(10, Number.isInteger(maxProposals) ? maxProposals : 5));
         const eventTypes = ['chat.user_turn', 'chat.assistant_turn'];
-        const currentEvents = this.#store.listEvents({
+        const capturedCurrentEvents = this.#store.listEvents({
             scope: 'chat',
             scopeId,
             eventTypes,
             limit: eventLimit,
         });
+        // When a character is known, only count turns explicitly captured under
+        // that character. Missing/legacy ownership metadata is not safe evidence.
+        const currentEvents = capturedCurrentEvents.filter(event =>
+            !activeCharacterId || getCharacterId(event) === activeCharacterId);
         if (!currentEvents.length) {
             return {
                 scope: 'chat',
@@ -95,9 +101,12 @@ export class DreamingEngine {
             };
         }
 
-        // Keep a bounded global window for cross-chat learning, while always including
-        // the active chat's full analysis window even when its events fall outside it.
-        const globalEvents = this.#store.listCapturedTurnsAcrossChats({ limit: Math.max(500, eventLimit) });
+        // Scan other chats only when they belong to the same active character.
+        // Without a character identity, dreaming is strictly limited to the active chat.
+        const globalEvents = activeCharacterId
+            ? this.#store.listCapturedTurnsAcrossChats({ limit: Math.max(500, eventLimit) })
+                .filter(event => getCharacterId(event) === activeCharacterId)
+            : [];
         const eventById = new Map([...globalEvents, ...currentEvents].map(event => [event.id, event]));
         const historyEvents = [...eventById.values()].sort((left, right) => left.createdAt - right.createdAt);
         const evidenceByPhrase = new Map();
@@ -127,12 +136,12 @@ export class DreamingEngine {
 
         const proposals = [];
         for (const candidate of selected) {
-            const target = inferDreamScope(candidate.evidence, scopeId);
+            const target = inferDreamScope(candidate.evidence, scopeId, activeCharacterId);
             const content = target.scope === 'chat'
                 ? 'Recurring topic in this chat: ' + candidate.phrase + '.'
                 : target.scope === 'character'
                     ? 'Recurring topic associated with this character across conversations: ' + candidate.phrase + '.'
-                    : 'Recurring topic across conversations: ' + candidate.phrase + '.';
+                    : 'Recurring topic associated with this character across conversations: ' + candidate.phrase + '.';
 
             if (this.#store.hasMemoryOrPending({
                 scope: target.scope,
@@ -156,6 +165,7 @@ export class DreamingEngine {
                     evidenceCount: candidate.evidence.length,
                     evidenceChatCount: new Set(candidate.evidence.map(event => event.scopeId)).size,
                     targetScope: target.scope,
+                    characterId: activeCharacterId,
                 },
             }));
         }
