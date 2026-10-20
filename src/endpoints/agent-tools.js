@@ -306,6 +306,11 @@ router.get('/memory/proposals', async (request, response) => {
 
 router.post('/memory/proposals/:id/review', async (request, response) => {
     const decision = request.body?.decision;
+    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
+    const activeChatId = getScopedChatId(
+        getSafeContextId(request.body?.activeChatId),
+        activeCharacterId,
+    );
     if (!['approve', 'reject'].includes(decision)) {
         return response.status(400).json({
             ok: false,
@@ -315,6 +320,17 @@ router.post('/memory/proposals/:id/review', async (request, response) => {
 
     try {
         const store = await getMemoryStore(request);
+        const proposal = store.getProposalById(request.params.id);
+        const ownsProposal = proposal && (
+            (activeCharacterId && proposal.scope === 'character' && proposal.scopeId === activeCharacterId)
+            || (activeChatId && proposal.scope === 'chat' && proposal.scopeId === activeChatId)
+        );
+        if (!ownsProposal) {
+            return response.status(404).json({
+                ok: false,
+                error: { code: 'proposal_not_found', message: 'No pending proposal exists in the active character/chat scope.' },
+            });
+        }
         const reviewed = store.reviewProposal(request.params.id, decision);
         if (!reviewed) {
             return response.status(404).json({
@@ -401,8 +417,24 @@ router.get('/memory/list', async (request, response) => {
 });
 
 router.delete('/memory/:id', async (request, response) => {
+    const activeCharacterId = getSafeContextId(request.query.activeCharacterId);
+    const activeChatId = getScopedChatId(
+        getSafeContextId(request.query.activeChatId),
+        activeCharacterId,
+    );
     try {
         const store = await getMemoryStore(request);
+        const memory = store.getMemoryById(request.params.id);
+        const ownsMemory = memory && (
+            (activeCharacterId && memory.scope === 'character' && memory.scopeId === activeCharacterId)
+            || (activeChatId && memory.scope === 'chat' && memory.scopeId === activeChatId)
+        );
+        if (!ownsMemory) {
+            return response.status(404).json({
+                ok: false,
+                error: { code: 'memory_not_found', message: 'No accepted memory exists in the active character/chat scope.' },
+            });
+        }
         const deleted = store.deleteMemory(request.params.id);
         if (!deleted) {
             return response.status(404).json({
