@@ -226,6 +226,33 @@ describe('agent tools API', () => {
         });
         expect(response.status).toBe(400);
     });
+    test('namespaces captured chat IDs by character to prevent collisions', async () => {
+        const capture = async characterId => {
+            const response = await fetch(baseUrl + '/capture-turn', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    activeChatId: 'same-chat-filename',
+                    activeCharacterId: characterId,
+                    role: 'user',
+                    content: 'This phrase is local to one character only.',
+                    messageKey: '0:user',
+                }),
+            });
+            expect(response.status).toBe(200);
+            return response.json();
+        };
+
+        const first = await capture('character-a.png');
+        const second = await capture('character-b.png');
+        expect(first.captured).toBe(true);
+        expect(first.duplicate).toBe(false);
+        expect(first.capturedCount).toBe(1);
+        expect(second.captured).toBe(true);
+        expect(second.duplicate).toBe(false);
+        expect(second.capturedCount).toBe(1);
+    });
+
     test('enforces autonomous settings, deduplicates captures, and dreams automatically', async () => {
         const initialResponse = await fetch(baseUrl + '/memory/settings');
         const initial = await initialResponse.json();
