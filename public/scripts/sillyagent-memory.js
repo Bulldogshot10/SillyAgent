@@ -227,7 +227,11 @@ async function refreshPanel(runtime) {
         const memories = (await Promise.all(payloads)).flatMap(payload => payload.memories || []);
         const unique = [...new Map(memories.map(memory => [memory.id, memory])).values()];
         renderMemories(unique);
-        const queue = await requestApi(runtime, '/memory/reflection-jobs/status');
+        const queueParams = new URLSearchParams();
+        if (ids.activeCharacterId) queueParams.set('activeCharacterId', ids.activeCharacterId);
+        if (ids.activeChatId) queueParams.set('activeChatId', ids.activeChatId);
+        const queueUrl = '/memory/reflection-jobs/status' + (queueParams.toString() ? '?' + queueParams.toString() : '');
+        const queue = await requestApi(runtime, queueUrl);
         const jobs = queue.jobs || {};
         const stats = document.getElementById('sa_memory_summary');
         if (stats) {

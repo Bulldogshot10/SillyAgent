@@ -41,8 +41,7 @@ function parseModelJson(raw) {
 function getEvidenceForJob(store, job) {
     let events;
     if (job.mode === 'dream' && job.characterId) {
-        events = store.listCapturedTurnsAcrossChats({ limit: 2000 })
-            .filter(event => event.metadata?.characterId === job.characterId);
+        events = store.listCapturedTurnsAcrossChats({ limit: 2000, characterId: job.characterId });
         return events.slice(-MAX_TURNS_DREAM);
     }
     events = store.listEvents({
@@ -162,8 +161,9 @@ function applyMemoryCandidates(store, job, candidates, events, existingMemories)
             const oldMemory = existingById.get(id);
             return oldMemory.scope !== target.scope || oldMemory.scopeId !== target.scopeId;
         })) continue;
-        if (existingMemories.some(memory => memory.content.trim().normalize('NFKC').toLocaleLowerCase()
-            === candidate.content.trim().normalize('NFKC').toLocaleLowerCase())
+        if (existingMemories.some(memory => memory.scope === target.scope && memory.scopeId === target.scopeId
+            && memory.content.trim().normalize('NFKC').toLocaleLowerCase()
+                === candidate.content.trim().normalize('NFKC').toLocaleLowerCase())
             || store.hasMemoryOrPending({
                 ...target,
                 kind: candidate.kind,

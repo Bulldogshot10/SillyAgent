@@ -319,9 +319,31 @@ describe('agent tools API', () => {
         expect(finalCapture.queuedReflection.created).toBe(true);
         expect(finalCapture.queuedReflection.job.mode).toBe('dream');
         expect(finalCapture.queuedReflection.job.status).toBe('pending');
-        const queueStatusResponse = await fetch(baseUrl + '/memory/reflection-jobs/status');
+        const queueStatusResponse = await fetch(baseUrl
+            + '/memory/reflection-jobs/status?activeCharacterId=julia-card.png&activeChatId=dream-test-chat');
         const queueStatus = await queueStatusResponse.json();
         expect(queueStatus.jobs.pending).toBeGreaterThan(0);
+
+        const juliaPendingBefore = queueStatus.jobs.pending;
+        for (let index = 0; index < 4; index++) {
+            const role = index % 2 ? 'assistant' : 'user';
+            const response = await fetch(baseUrl + '/capture-turn', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    activeChatId: 'bella-queue-test-chat',
+                    activeCharacterId: 'bella-card.png',
+                    role,
+                    content: 'An unrelated reflection queue item for Bella.',
+                    messageKey: 'bella-' + index + ':' + role,
+                }),
+            });
+            expect(response.status).toBe(200);
+        }
+        const juliaQueueAfter = await fetch(baseUrl + '/memory/reflection-jobs/status?activeCharacterId=julia-card.png');
+        expect((await juliaQueueAfter.json()).jobs.pending).toBe(juliaPendingBefore);
+        const unscopedQueue = await fetch(baseUrl + '/memory/reflection-jobs/status');
+        expect((await unscopedQueue.json()).jobs).toEqual({ pending: 0, running: 0, completed: 0, failed: 0 });
 
         const manualDreamResponse = await fetch(baseUrl + '/dream', {
             method: 'POST',

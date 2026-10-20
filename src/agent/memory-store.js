@@ -1236,11 +1236,20 @@ export class MemoryStore {
      * @param {object} options Query bounds.
      * @returns {object[]} Captured turn events, oldest first within the selected window.
      */
-    listCapturedTurnsAcrossChats({ limit = 500 } = {}) {
+    listCapturedTurnsAcrossChats({ limit = 500, characterId = null } = {}) {
         const safeLimit = Math.max(1, Math.min(2000, Number.isInteger(limit) ? limit : 500));
-        return this.#db.prepare(
-            'SELECT * FROM memory_events WHERE scope = ? AND event_type IN (?, ?) ORDER BY created_at DESC LIMIT ?',
-        ).all('chat', 'chat.user_turn', 'chat.assistant_turn', safeLimit).reverse().map(toEvent);
+        const safeCharacterId = characterId == null ? null : normalizeText(characterId, 256, 'Character ID');
+        const params = ['chat', 'chat.user_turn', 'chat.assistant_turn'];
+        let sql = 'SELECT * FROM memory_events WHERE scope = ? AND event_type IN (?, ?)';
+        if (safeCharacterId) {
+            // Apply the character partition before LIMIT so busy characters cannot
+            // evict another character's history from its dreaming window.
+            sql += " AND json_extract(metadata_json, '$.characterId') = ?";
+            params.push(safeCharacterId);
+        }
+        sql += ' ORDER BY created_at DESC LIMIT ?';
+        params.push(safeLimit);
+        return this.#db.prepare(sql).all(...params).reverse().map(toEvent);
     }
 
     /**
@@ -1367,11 +1376,24 @@ export class MemoryStore {
         };
     }
 
-    getReflectionJobSummary() {
+    getReflectionJobSummary({ characterId = null, scopeId = null } = {}) {
         const summary = { pending: 0, running: 0, completed: 0, failed: 0 };
-        for (const row of this.#db.prepare(
-            'SELECT status, COUNT(*) AS count FROM memory_reflection_jobs GROUP BY status',
-        ).all()) {
+        const safeCharacterId = characterId == null ? null : normalizeText(characterId, 256, 'Character ID');
+        const safeScopeId = scopeId == null ? null : normalizeText(scopeId, 256, 'Chat scope ID');
+        let sql = 'SELECT status, COUNT(*) AS count FROM memory_reflection_jobs';
+        const params = [];
+        if (safeCharacterId) {
+            // A character's reflection jobs can consolidate that character's chats,
+            // but must never report work belonging to another character.
+            sql += ' WHERE character_id = ?';
+            params.push(safeCharacterId);
+        } else if (safeScopeId) {
+            // Group chats/no-character contexts are restricted to the exact chat.
+            sql += " WHERE scope_id = ? AND character_id = ''";
+            params.push(safeScopeId);
+        }
+        sql += ' GROUP BY status';
+        for (const row of this.#db.prepare(sql).all(...params)) {
             if (Object.hasOwn(summary, row.status)) summary[row.status] = row.count;
         }
         return summary;

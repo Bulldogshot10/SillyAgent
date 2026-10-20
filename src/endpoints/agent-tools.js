@@ -538,9 +538,19 @@ router.post('/memory/reflection-provider', async (request, response) => {
 });
 
 router.get('/memory/reflection-jobs/status', async (request, response) => {
+    const activeCharacterId = getSafeContextId(request.query.activeCharacterId);
+    const activeChatId = getScopedChatId(
+        getSafeContextId(request.query.activeChatId),
+        activeCharacterId,
+    );
     try {
         const store = await getMemoryStore(request);
-        return response.json({ jobs: store.getReflectionJobSummary() });
+        // An unscoped initialization/status request must not reveal totals from
+        // every character's private reflection queue.
+        const jobs = activeCharacterId || activeChatId
+            ? store.getReflectionJobSummary({ characterId: activeCharacterId, scopeId: activeChatId })
+            : { pending: 0, running: 0, completed: 0, failed: 0 };
+        return response.json({ jobs });
     } catch (error) {
         return sendMemoryError(response, error);
     }

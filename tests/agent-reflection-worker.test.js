@@ -68,11 +68,21 @@ afterEach(async () => {
 });
 
 describe('server-owned reflection worker', () => {
-    test('processes a persisted job, writes evidence-linked memory, and improves a reusable skill', async () => {
+    test('processes a persisted job without cross-scope dedupe, writes evidence-linked memory, and improves a reusable skill', async () => {
         const events = await captureTurns();
+        const duplicateText = 'The user is learning Rust to build a file-management CLI.';
+        const chatScopedMemory = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'character-chat-fixture',
+            content: duplicateText,
+            kind: 'goal',
+            importance: 4,
+            requireApproval: false,
+        });
+        expect(chatScopedMemory.memory).not.toBeNull();
         const modelResult = {
             memories: [{
-                content: 'The user is learning Rust to build a file-management CLI.',
+                content: duplicateText,
                 kind: 'goal',
                 importance: 4,
                 scope: 'character',
@@ -113,6 +123,8 @@ describe('server-owned reflection worker', () => {
         const memories = store.listMemories({ scope: 'character', scopeId: 'julia.png' });
         expect(memories.some(memory => memory.content === modelResult.memories[0].content)).toBe(true);
         expect(memories.find(memory => memory.content === modelResult.memories[0].content).metadata.evidenceEventIds).toEqual([events[0].id, events[2].id]);
+        expect(store.listMemories({ scope: 'chat', scopeId: 'character-chat-fixture' })
+            .some(memory => memory.content === duplicateText)).toBe(true);
         expect(skills.listSkills({ query: 'Rust CLI' })).toHaveLength(1);
         expect(skills.readSkill('rust-cli-import-recovery').source).toBe('self_improvement');
     });

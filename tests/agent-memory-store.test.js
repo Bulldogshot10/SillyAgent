@@ -542,6 +542,31 @@ describe('MemoryStore', () => {
         expect(results[0].matchedTerms).toEqual(['silver', 'key']);
     });
 
+    test('filters the cross-chat dreaming window by character before applying its limit', async () => {
+        const store = await createMemoryStore();
+        const julia = store.captureTurn({
+            scopeId: 'julia-chat',
+            role: 'user',
+            content: 'Older Julia turn should remain available to Julia dreaming.',
+            captureKey: 'julia-old-turn',
+            metadata: { characterId: 'julia.png' },
+            createdAt: 1000,
+        }).event;
+        store.captureTurn({
+            scopeId: 'bella-chat',
+            role: 'user',
+            content: 'Newer Bella turn must not occupy Julia dreaming capacity.',
+            captureKey: 'bella-new-turn',
+            metadata: { characterId: 'bella.png' },
+            createdAt: 2000,
+        });
+
+        const rows = store.listCapturedTurnsAcrossChats({ limit: 1, characterId: 'julia.png' });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].id).toBe(julia.id);
+        expect(rows[0].metadata.characterId).toBe('julia.png');
+    });
+
     test('persists and claims autonomous reflection jobs only within the active character', async () => {
         const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-reflection-jobs-'));
         const databasePath = path.join(folder, 'memory.sqlite');
