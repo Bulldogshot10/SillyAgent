@@ -317,10 +317,10 @@ export class SkillStore {
                     const latestSkill = this.#db.prepare('SELECT active_version FROM skills WHERE slug = ?').get(normalizedSlug);
                     const previousVersion = latestSkill?.active_version ?? null;
                     if (previousVersion !== null) {
-                        this.#db.prepare("UPDATE skill_revisions SET status = 'superseded' WHERE slug = ? AND version = ? AND status = 'active'")
+                        this.#db.prepare('UPDATE skill_revisions SET status = \'superseded\' WHERE slug = ? AND version = ? AND status = \'active\'')
                             .run(normalizedSlug, previousVersion);
                     }
-                    this.#db.prepare("UPDATE skill_revisions SET status = 'active', activated_at = ? WHERE slug = ? AND version = ?")
+                    this.#db.prepare('UPDATE skill_revisions SET status = \'active\', activated_at = ? WHERE slug = ? AND version = ?')
                         .run(now, normalizedSlug, duplicatePending.version);
                     this.#db.prepare('UPDATE skills SET active_version = ?, updated_at = ? WHERE slug = ?')
                         .run(duplicatePending.version, now, normalizedSlug);
