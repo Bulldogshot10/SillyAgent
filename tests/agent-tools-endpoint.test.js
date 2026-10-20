@@ -389,7 +389,7 @@ describe('agent tools API', () => {
         expect(afterDeleteRetrieval.memories.some(item => item.content === 'A brass telescope belongs in the attic.')).toBe(false);
     });
 
-    test('automatically queues extraction and dreaming jobs from captured turns', async () => {
+    test('queues persisted extraction and dreaming jobs for the native server worker only', async () => {
         const characterId = 'auto-memory-character.png';
         const chatId = 'auto-memory-chat.jsonl';
         const roles = ['user', 'assistant', 'user', 'assistant', 'user', 'assistant',
@@ -417,42 +417,36 @@ describe('agent tools API', () => {
         expect(captureResults[11].queuedReflection.created).toBe(true);
         expect(captureResults[11].queuedReflection.job.mode).toBe('dream');
 
-        const wrongCharacterClaim = await postJson(baseUrl + '/memory/reflection-jobs/claim', {
-            activeChatId: 'other-chat.jsonl',
-            activeCharacterId: 'other-character.png',
-        });
-        expect((await wrongCharacterClaim.json()).job).toBeNull();
+        const queueStatusResponse = await fetch(baseUrl + '/memory/reflection-jobs/status');
+        const queueStatus = await queueStatusResponse.json();
+        expect(queueStatus.jobs.pending).toBeGreaterThanOrEqual(3);
 
-        const firstClaimResponse = await postJson(baseUrl + '/memory/reflection-jobs/claim', {
+        expect((await postJson(baseUrl + '/memory/reflection-jobs/claim', {
+            activeChatId: chatId,
+            activeCharacterId: characterId,
+        })).status).toBe(404);
+        expect((await postJson(baseUrl + '/memory/reflection-context', {
+            activeChatId: chatId,
+            activeCharacterId: characterId,
+        })).status).toBe(404);
+        expect((await postJson(baseUrl + '/memory/reflection-jobs/fake-id/complete', {
+            claimToken: 'browser-claim',
+        })).status).toBe(404);
+
+        const manualDreamResponse = await postJson(baseUrl + '/dream', {
             activeChatId: chatId,
             activeCharacterId: characterId,
         });
-        const firstClaim = (await firstClaimResponse.json()).job;
-        expect(firstClaim.mode).toBe('extract');
-        expect(firstClaim.characterId).toBe(characterId);
+        expect(manualDreamResponse.status).toBe(404);
 
-        const reflectionContextResponse = await postJson(baseUrl + '/memory/reflection-context', {
-            activeChatId: firstClaim.chatId,
-            activeCharacterId: firstClaim.characterId,
-        });
-        const reflectionContext = await reflectionContextResponse.json();
-        expect(reflectionContext.turns.length).toBe(12);
-        expect(reflectionContext.turns.every(turn => turn.chatId === reflectionContext.activeChatId)).toBe(true);
-
-        const completeResponse = await postJson(
-            baseUrl + '/memory/reflection-jobs/' + encodeURIComponent(firstClaim.id) + '/complete',
-            { claimToken: firstClaim.claimToken },
-        );
-        expect(completeResponse.status).toBe(200);
-        expect((await completeResponse.json()).completed).toBe(true);
-
-        const secondClaimResponse = await postJson(baseUrl + '/memory/reflection-jobs/claim', {
+        const clearResponse = await postJson(baseUrl + '/memory/capture-history/clear', {
             activeChatId: chatId,
             activeCharacterId: characterId,
         });
-        const secondClaim = (await secondClaimResponse.json()).job;
-        expect(secondClaim.mode).toBe('extract');
-        expect(secondClaim.id).not.toBe(firstClaim.id);
-    });
+        const cleared = await clearResponse.json();
+        expect(clearResponse.status).toBe(200);
+        expect(cleared.clearedTurns).toBe(12);
+        expect(cleared.capturedTurnsRemaining).toBe(0);
+    });;
 
 });
