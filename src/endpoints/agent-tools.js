@@ -24,6 +24,18 @@ function getSafeContextId(value) {
         : null;
 }
 
+function getScopedChatId(chatId, characterId) {
+    const safeChatId = getSafeContextId(chatId);
+    if (!safeChatId) return null;
+    const safeCharacterId = getSafeContextId(characterId);
+    if (!safeCharacterId) return safeChatId;
+    // Chat IDs can be filenames and may collide between characters. Hash both
+    // IDs so even chat-scoped memories are isolated by character.
+    return 'character-chat-' + createHash('sha256')
+        .update(safeCharacterId + '\0' + safeChatId)
+        .digest('hex');
+}
+
 function getEnvironmentBoolean(name, fallback) {
     const value = process.env[name];
     if (value === undefined) return fallback;
@@ -351,7 +363,14 @@ router.post('/memory/settings', async (request, response) => {
 
 router.get('/memory/list', async (request, response) => {
     const scope = typeof request.query.scope === 'string' ? request.query.scope : 'all';
-    const scopeId = ['user', 'all'].includes(scope) ? '' : getSafeContextId(request.query.scopeId);
+    const rawScopeId = getSafeContextId(request.query.scopeId);
+    const activeChatId = getSafeContextId(request.query.activeChatId);
+    const activeCharacterId = getSafeContextId(request.query.activeCharacterId);
+    const scopeId = ['user', 'all'].includes(scope)
+        ? ''
+        : scope === 'chat' && activeChatId
+            ? getScopedChatId(activeChatId, activeCharacterId)
+            : rawScopeId;
     const query = typeof request.query.query === 'string' ? request.query.query : '';
     const limit = Number.parseInt(request.query.limit, 10);
     if (!['user', 'all'].includes(scope) && !scopeId) {
@@ -391,7 +410,9 @@ router.delete('/memory/:id', async (request, response) => {
 });
 
 router.post('/memory/capture-history/clear', async (request, response) => {
-    const activeChatId = getSafeContextId(request.body?.activeChatId);
+    const rawChatId = getSafeContextId(request.body?.activeChatId);
+    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
+    const activeChatId = getScopedChatId(rawChatId, activeCharacterId);
     if (!activeChatId) {
         return response.status(400).json({
             ok: false,
@@ -425,7 +446,10 @@ router.post('/retrieve-context', async (request, response) => {
         const results = store.searchMemories({
             query,
             scope: 'relevant',
-            activeChatId: getSafeContextId(request.body?.activeChatId),
+            activeChatId: getScopedChatId(
+                getSafeContextId(request.body?.activeChatId),
+                getSafeContextId(request.body?.activeCharacterId),
+            ),
             activeCharacterId: getSafeContextId(request.body?.activeCharacterId),
             limit: Math.max(1, Math.min(3, Number.isInteger(request.body?.limit) ? request.body.limit : 3)),
         }).map(memory => ({
@@ -458,21 +482,22 @@ router.post('/capture-turn', async (request, response) => {
         const store = await getMemoryStore(request);
         const settings = getEffectiveMemorySettings(store);
         if (!settings.autoCaptureEnabled) return response.json({ captured: false, disabled: true });
+        const scopedChatId = getScopedChatId(activeChatId, activeCharacterId);
         const captureKey = createHash('sha256')
-            .update(activeChatId + '\0' + body.role + '\0' + body.messageKey + '\0' + body.content)
+            .update((activeCharacterId ?? '') + '\0' + activeChatId + '\0' + body.role + '\0' + body.messageKey + '\0' + body.content)
             .digest('hex');
         const captured = store.captureTurn({
-            scopeId: activeChatId,
+            scopeId: scopedChatId,
             role: body.role,
             content: body.content,
             captureKey,
             metadata: { characterId: activeCharacterId, messageKey: body.messageKey },
         });
-        const capturedCount = store.countCapturedTurns(activeChatId);
+        const capturedCount = store.countCapturedTurns(scopedChatId);
         let dreaming = null;
         if (!captured.duplicate && settings.autoDreamEnabled && capturedCount > 0 && capturedCount % 12 === 0) {
             dreaming = new DreamingEngine(store).run({
-                scopeId: activeChatId,
+                scopeId: scopedChatId,
                 activeCharacterId,
                 requireApproval: settings.requireApproval,
             });
@@ -542,7 +567,10 @@ router.post('/execute', async (request, response) => {
             skillStore,
             requireSkillApproval: skillStore ? getEffectiveSkillSettings(skillStore).requireApproval : false,
             requireMemoryApproval: memoryStore ? getEffectiveMemorySettings(memoryStore).requireApproval : false,
-            activeChatId: getSafeContextId(body.activeChatId),
+            activeChatId: getScopedChatId(
+                getSafeContextId(body.activeChatId),
+                getSafeContextId(body.activeCharacterId),
+            ),
             activeCharacterId: getSafeContextId(body.activeCharacterId),
         },
     });
