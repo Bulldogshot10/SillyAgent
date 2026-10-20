@@ -16,6 +16,12 @@ The memory panel does not expose toggles for automation, an approval queue, a ma
 
 Captured raw turns and accepted memories remain separate. Clearing captured history removes only captured user/assistant turn events for the active chat; it keeps accepted memories. Dreaming v2 detects recurring topics in the active chat plus a bounded cross-chat history window restricted to the active character ID. A topic repeated only within one chat stays chat-scoped; repetition across several chats belonging to the same character becomes character-scoped. Evidence from any other character is excluded before consolidation, and dreaming never writes to a global user scope. The model-driven memory tools store durable user facts/preferences and character canon/continuity inside that active character's partition, while task-local context stays chat-scoped. The engine does not yet perform independent factual verification or rewrite its own source code.
 
+## Legacy memory migration
+
+Opening an existing SQLite store automatically migrates old global `user` memories into character partitions. The migrator first uses saved character metadata, then correlates the original memory write timestamp with captured chat turns. If the database only identifies one character, it assigns the legacy record to that character. Matching memories are merged without duplication and the full-text indexes are refreshed.
+
+If a legacy memory has no reliable character provenance, it remains marked as unresolved legacy data and is excluded from every automatic retrieval path. The migrator does not clone uncertain memories into every character or guess an owner, because either choice can leak one character's history into another. It retries on subsequent store opens, so importing matching chat history later can make additional records migratable. No manual migration trigger is required.
+
 ## Provider compatibility
 
 Automatic native function calling applies when SillyTavern is using Chat Completion with a provider/model supported by its ToolManager, including Google AI Studio/MakerSuite and compatible OpenAI-style endpoints that implement tool calls. On a provider or completion mode without native tool-call support, automatic capture, retrieval, and periodic dreaming still run, but the model cannot execute the registered function tools.
