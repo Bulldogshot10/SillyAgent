@@ -193,11 +193,6 @@ if (!cliArgs.disableCsrf) {
     });
 
     app.get('/csrf-token', (req, res) => {
-        res.set({
-            'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-        });
         res.json({
             'token': csrfSyncProtection.generateToken(req),
         });
@@ -208,23 +203,9 @@ if (!cliArgs.disableCsrf) {
     csrfSyncProtection.invalidCsrfTokenError.stack = undefined;
 
     app.use(csrfSyncProtection.csrfSynchronisedProtection);
-    app.use((error, req, res, next) => {
-        if (error === csrfSyncProtection.invalidCsrfTokenError
-            || error?.code === 'EBADCSRFTOKEN'
-            || /Invalid CSRF token/.test(error?.message ?? '')) {
-            const tokenState = req.headers['x-csrf-token'] ? 'present' : 'missing';
-            console.error(`[CSRF error] Rejected ${req.method} ${req.originalUrl}; X-CSRF-Token header ${tokenState}.`);
-        }
-        next(error);
-    });
 } else {
     console.warn('\nCSRF protection is disabled. This will make your server vulnerable to CSRF attacks.\n');
     app.get('/csrf-token', (req, res) => {
-        res.set({
-            'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-        });
         res.json({
             'token': 'disabled',
         });
