@@ -471,23 +471,23 @@ export class MemoryStore {
         const windowMs = Math.max(10000, Math.min(600000,
             Number.isInteger(correlationWindowMs) ? correlationWindowMs : 180000));
         const userMemories = this.#db.prepare(
-            "SELECT * FROM memories WHERE scope = 'user' AND scope_id = '' ORDER BY created_at ASC",
+            `SELECT * FROM memories WHERE scope = 'user' AND scope_id = '' ORDER BY created_at ASC`,
         ).all();
         const userProposals = this.#db.prepare(
-            "SELECT * FROM memory_proposals WHERE scope = 'user' AND scope_id = '' ORDER BY created_at ASC",
+            `SELECT * FROM memory_proposals WHERE scope = 'user' AND scope_id = '' ORDER BY created_at ASC`,
         ).all();
 
         const knownCharacterIds = new Set();
         for (const row of this.#db.prepare(
-            "SELECT scope_id AS character_id FROM memories WHERE scope = 'character' AND scope_id != '' " +
-            "UNION SELECT scope_id AS character_id FROM memory_proposals WHERE scope = 'character' AND scope_id != ''",
+            `SELECT scope_id AS character_id FROM memories WHERE scope = 'character' AND scope_id != '' ` +
+            `UNION SELECT scope_id AS character_id FROM memory_proposals WHERE scope = 'character' AND scope_id != ''`,
         ).all()) {
             knownCharacterIds.add(row.character_id);
         }
 
         const capturedTurns = this.#db.prepare(
-            "SELECT id, scope_id, metadata_json, created_at FROM memory_events " +
-            "WHERE scope = 'chat' AND event_type IN ('chat.user_turn', 'chat.assistant_turn')",
+            `SELECT id, scope_id, metadata_json, created_at FROM memory_events ` +
+            `WHERE scope = 'chat' AND event_type IN ('chat.user_turn', 'chat.assistant_turn')`,
         ).all().map(row => {
             const metadata = parseMetadata(row.metadata_json);
             const characterId = typeof metadata.characterId === 'string' ? metadata.characterId.trim() : '';
@@ -574,7 +574,7 @@ export class MemoryStore {
                     },
                 });
                 const existingTarget = this.#db.prepare(
-                    "SELECT * FROM memories WHERE scope = 'character' AND scope_id = ? AND kind = ? AND content = ?",
+                    `SELECT * FROM memories WHERE scope = 'character' AND scope_id = ? AND kind = ? AND content = ?`,
                 ).get(characterId, row.kind, row.content);
 
                 this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(row.id);
@@ -584,7 +584,7 @@ export class MemoryStore {
                     this.#db.prepare(
                         'UPDATE memories SET importance = MAX(importance, ?), updated_at = MAX(updated_at, ?) WHERE id = ?',
                     ).run(row.importance, row.updated_at, existingTarget.id);
-                    this.#db.prepare("DELETE FROM memories WHERE id = ?").run(row.id);
+                    this.#db.prepare('DELETE FROM memories WHERE id = ?').run(row.id);
                     const updated = this.#db.prepare('SELECT * FROM memories WHERE id = ?').get(existingTarget.id);
                     this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(updated.id);
                     this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(updated.id);
@@ -597,7 +597,7 @@ export class MemoryStore {
                     merged++;
                 } else {
                     this.#db.prepare(
-                        "UPDATE memories SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?",
+                        `UPDATE memories SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?`,
                     ).run(characterId, nextMetadata, row.id);
                     const updated = this.#db.prepare('SELECT * FROM memories WHERE id = ?').get(row.id);
                     this.#db.prepare(
@@ -619,11 +619,11 @@ export class MemoryStore {
                             legacyMigration: { status: 'migrated', characterId, migratedAt: Date.now() },
                         });
                         this.#db.prepare(
-                            "UPDATE memory_events SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?",
+                            `UPDATE memory_events SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?`,
                         ).run(characterId, sourceMetadata, source.id);
                     }
                     this.#db.prepare(
-                        "UPDATE memory_proposals SET scope = 'character', scope_id = ? WHERE scope = 'user' AND source_event_id = ?",
+                        `UPDATE memory_proposals SET scope = 'character', scope_id = ? WHERE scope = 'user' AND source_event_id = ?`,
                     ).run(characterId, row.source_event_id);
                 }
             }
@@ -638,7 +638,7 @@ export class MemoryStore {
                     continue;
                 }
                 this.#db.prepare(
-                    "UPDATE memory_proposals SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?",
+                    `UPDATE memory_proposals SET scope = 'character', scope_id = ?, metadata_json = ? WHERE id = ?`,
                 ).run(characterId, serializeMetadata({
                     ...parseMetadata(row.metadata_json),
                     legacyMigration: { status: 'migrated', characterId, migratedAt: Date.now() },
@@ -647,7 +647,7 @@ export class MemoryStore {
                     const source = eventById.get(row.source_event_id);
                     if (source?.scope === 'user') {
                         this.#db.prepare(
-                            "UPDATE memory_events SET scope = 'character', scope_id = ? WHERE id = ?",
+                            `UPDATE memory_events SET scope = 'character', scope_id = ? WHERE id = ?`,
                         ).run(characterId, source.id);
                     }
                 }
