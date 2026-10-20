@@ -1089,7 +1089,7 @@ export class MemoryStore {
      * @param {object} input Claim options.
      * @returns {object|null} Claimed job.
      */
-    claimReflectionJob({ scopeId = null, characterId = null, claimToken = randomUUID(), leaseMs = 300000, now = Date.now() }) {
+    claimReflectionJob({ scopeId = null, characterId = null, allScopes = false, claimToken = randomUUID(), leaseMs = 300000, now = Date.now() }) {
         // A server-owned worker may claim across all character/chat queues. UI
         // claims stay scoped to the selected character or exact chat.
         const target = scopeId == null ? null : normalizeScope('chat', scopeId);
@@ -1113,20 +1113,22 @@ export class MemoryStore {
                 ).run(status, now + 15000, status, now, job.id);
             }
 
-            const row = safeCharacterId
+            const row = allScopes
                 ? this.#db.prepare(
-                    'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = ? ' +
+                    'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? ' +
                     'ORDER BY CASE mode WHEN \'extract\' THEN 0 ELSE 1 END, created_at ASC LIMIT 1',
-                ).get(now, safeCharacterId)
-                : target
+                ).get(now)
+                : safeCharacterId
                     ? this.#db.prepare(
-                        'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = \'\' AND scope_id = ? ' +
-                        'ORDER BY created_at ASC LIMIT 1',
-                    ).get(now, target.scopeId)
-                    : this.#db.prepare(
-                        'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? ' +
+                        'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = ? ' +
                         'ORDER BY CASE mode WHEN \'extract\' THEN 0 ELSE 1 END, created_at ASC LIMIT 1',
-                    ).get(now);
+                    ).get(now, safeCharacterId)
+                    : target
+                        ? this.#db.prepare(
+                            'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = \'\' AND scope_id = ? ' +
+                            'ORDER BY created_at ASC LIMIT 1',
+                        ).get(now, target.scopeId)
+                        : null;
 
             if (!row) {
                 this.#db.exec('COMMIT;');
