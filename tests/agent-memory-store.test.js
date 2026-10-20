@@ -102,6 +102,102 @@ describe('MemoryStore', () => {
         expect(store.getSummary()).toEqual({ events: 1, acceptedMemories: 1, pendingProposals: 0 });
     });
 
+    test('automatically migrates a legacy global memory to its originating character on reopen', async () => {
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-memory-migration-'));
+        const databasePath = path.join(folder, 'memory.sqlite');
+        let store;
+        try {
+            store = await createMemoryStore(databasePath);
+            const sourceTime = 1700000000000;
+            store.captureTurn({
+                scopeId: 'legacy-chat.jsonl',
+                role: 'user',
+                content: 'I prefer practical explanations when working with this character.',
+                captureKey: 'legacy-turn',
+                metadata: { characterId: 'julia-card.png' },
+                createdAt: sourceTime,
+            });
+            store.proposeMemory({
+                scope: 'user',
+                content: 'The user prefers practical explanations.',
+                kind: 'preference',
+                importance: 4,
+                createdAt: sourceTime + 10000,
+            });
+            store.close();
+            stores = stores.filter(item => item !== store);
+            store = await createMemoryStore(databasePath);
+
+            expect(store.listMemories({ scope: 'user' })).toHaveLength(0);
+            expect(store.listMemories({ scope: 'character', scopeId: 'julia-card.png' })
+                .some(memory => memory.content === 'The user prefers practical explanations.')).toBe(true);
+            expect(store.searchMemories({
+                query: 'practical explanations',
+                scope: 'relevant',
+                activeCharacterId: 'julia-card.png',
+            }).some(memory => memory.content === 'The user prefers practical explanations.')).toBe(true);
+        } finally {
+            if (store) {
+                store.close();
+                stores = stores.filter(item => item !== store);
+            }
+            await fs.rm(folder, { recursive: true, force: true });
+        }
+    });
+
+    test('keeps legacy global memory out of retrieval when character ownership is ambiguous', async () => {
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-memory-unresolved-'));
+        const databasePath = path.join(folder, 'memory.sqlite');
+        let store;
+        try {
+            store = await createMemoryStore(databasePath);
+            store.captureTurn({
+                scopeId: 'julia-chat.jsonl',
+                role: 'user',
+                content: 'This conversation belongs to Julia.',
+                captureKey: 'julia-turn',
+                metadata: { characterId: 'julia-card.png' },
+                createdAt: 1700000000000,
+            });
+            store.captureTurn({
+                scopeId: 'bella-chat.jsonl',
+                role: 'user',
+                content: 'This conversation belongs to Bella.',
+                captureKey: 'bella-turn',
+                metadata: { characterId: 'bella-card.png' },
+                createdAt: 1700000010000,
+            });
+            store.proposeMemory({
+                scope: 'user',
+                content: 'An old memory with no reliable character owner.',
+                kind: 'fact',
+                createdAt: 1700000005000,
+            });
+            store.close();
+            stores = stores.filter(item => item !== store);
+            store = await createMemoryStore(databasePath);
+
+            expect(store.listMemories({ scope: 'user' })
+                .some(memory => memory.content === 'An old memory with no reliable character owner.')).toBe(true);
+            expect(store.searchMemories({
+                query: 'reliable character owner',
+                scope: 'relevant',
+                activeCharacterId: 'julia-card.png',
+            })).toHaveLength(0);
+            expect(store.searchMemories({
+                query: 'reliable character owner',
+                scope: 'relevant',
+                activeCharacterId: 'bella-card.png',
+            })).toHaveLength(0);
+        } finally {
+            if (store) {
+                store.close();
+                stores = stores.filter(item => item !== store);
+            }
+            await fs.rm(folder, { recursive: true, force: true });
+        }
+    });
+
     test('keeps proposals out of retrieval until approved', async () => {
         const store = await createMemoryStore();
         store.updateSettings({ requireApproval: true });
