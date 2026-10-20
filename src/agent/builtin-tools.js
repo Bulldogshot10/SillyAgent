@@ -96,24 +96,32 @@ export function registerBuiltinTools(registry = toolRegistry) {
             permission: 'read',
             timeoutMs: 2000,
             inputSchema: MEMORY_SEARCH_SCHEMA,
-            execute: async ({ input, context }) => ({
-                query: input.query,
-                scope: input.scope ?? 'relevant',
-                memories: context.memoryStore.searchMemories({
+            execute: async ({ input, context }) => {
+                const requestedScope = input.scope ?? 'relevant';
+                // A model may still request the legacy "user" scope, but tool
+                // searches must stay within the active character or current chat.
+                const scope = requestedScope === 'user'
+                    ? (context.activeCharacterId ? 'character' : 'chat')
+                    : requestedScope;
+                return {
                     query: input.query,
-                    scope: input.scope ?? 'relevant',
-                    activeChatId: context.activeChatId,
-                    activeCharacterId: context.activeCharacterId,
-                    limit: input.limit ?? 5,
-                }).map(({ scope, kind, content, importance }) => ({
                     scope,
-                    kind,
-                    importance,
-                    content: Array.from(content).length > 800
-                        ? Array.from(content).slice(0, 797).join('') + '...'
-                        : content,
-                })),
-            }),
+                    memories: context.memoryStore.searchMemories({
+                        query: input.query,
+                        scope,
+                        activeChatId: context.activeChatId,
+                        activeCharacterId: context.activeCharacterId,
+                        limit: input.limit ?? 5,
+                    }).map(({ scope, kind, content, importance }) => ({
+                        scope,
+                        kind,
+                        importance,
+                        content: Array.from(content).length > 800
+                            ? Array.from(content).slice(0, 797).join('') + '...'
+                            : content,
+                    })),
+                };
+            },
         });
     }
 
