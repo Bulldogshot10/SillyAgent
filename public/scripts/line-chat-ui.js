@@ -344,7 +344,11 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
     }
 
     async function loadRecentChats(force = false) {
-        if (recentChatsPromise) return recentChatsPromise;
+        if (recentChatsPromise) {
+            if (!force) return recentChatsPromise;
+            await recentChatsPromise;
+            return loadRecentChats(true);
+        }
         if (recentChatsLoaded && !force) {
             renderRecentChats();
             return;
