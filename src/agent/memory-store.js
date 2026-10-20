@@ -853,6 +853,18 @@ export class MemoryStore {
     }
 
     /**
+     * Read recent captured turns across chats for autonomous cross-chat consolidation.
+     * @param {object} options Query bounds.
+     * @returns {object[]} Captured turn events, oldest first within the selected window.
+     */
+    listCapturedTurnsAcrossChats({ limit = 500 } = {}) {
+        const safeLimit = Math.max(1, Math.min(2000, Number.isInteger(limit) ? limit : 500));
+        return this.#db.prepare(
+            'SELECT * FROM memory_events WHERE scope = ? AND event_type IN (?, ?) ORDER BY created_at DESC LIMIT ?',
+        ).all('chat', 'chat.user_turn', 'chat.assistant_turn', safeLimit).reverse().map(toEvent);
+    }
+
+    /**
      * Return true when a matching accepted memory or pending proposal already exists.
      * @param {object} input Memory identity.
      * @returns {boolean} Whether the candidate is already known.
