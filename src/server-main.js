@@ -54,7 +54,6 @@ import corsProxyMiddleware from './middleware/corsProxy.js';
 import hostWhitelistMiddleware from './middleware/hostWhitelist.js';
 import userCssMiddleware from './middleware/userCss.js';
 import { agentToolsBodyLimit } from './middleware/agent-tools-body-limit.js';
-import path from 'node:path';
 import { MemoryStore } from './agent/memory-store.js';
 import { SkillStore } from './agent/skill-store.js';
 import { startReflectionWorker } from './agent/reflection-worker.js';
@@ -113,10 +112,14 @@ if (typeof globalThis.DATA_ROOT === 'string' && globalThis.DATA_ROOT) {
     try {
         const agentDatabasePath = path.join(globalThis.DATA_ROOT, 'sillyagent', 'memory.sqlite');
         const agentStore = await MemoryStore.open(agentDatabasePath);
+        let agentSkillStorePromise;
         startReflectionWorker({
             store: agentStore,
             directories: agentDirectories,
-            getSkillStore: async () => SkillStore.open(path.join(globalThis.DATA_ROOT, 'sillyagent', 'skills.sqlite')),
+            getSkillStore: () => {
+                agentSkillStorePromise ??= SkillStore.open(path.join(globalThis.DATA_ROOT, 'sillyagent', 'skills.sqlite'));
+                return agentSkillStorePromise;
+            },
         });
     } catch (error) {
         console.warn('[SillyAgent native worker] Startup worker unavailable:', error?.message || error);
