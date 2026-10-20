@@ -228,6 +228,52 @@ describe('agent tools API', () => {
         });
         expect(response.status).toBe(400);
     });
+    test('queues automatic review on an assistant reply without turn-count thresholds and coalesces pending work', async () => {
+        const context = {
+            activeChatId: 'natural-roleplay-chat',
+            activeCharacterId: 'character-auto-review.png',
+        };
+        const userResponse = await postJson(baseUrl + '/capture-turn', {
+            ...context,
+            role: 'user',
+            content: 'I prefer quiet scenes and natural conversation.',
+            messageKey: '0:user',
+        });
+        const user = await userResponse.json();
+        expect(userResponse.status).toBe(200);
+        expect(user.queuedReflection).toBeNull();
+
+        const firstResponse = await postJson(baseUrl + '/capture-turn', {
+            ...context,
+            role: 'assistant',
+            content: 'The room settles into a quiet evening scene.',
+            messageKey: '1:assistant',
+        });
+        const first = await firstResponse.json();
+        expect(firstResponse.status).toBe(200);
+        expect(first.capturedCount).toBe(2);
+        expect(first.queuedReflection.job.mode).toBe('extract');
+        expect(first.queuedReflection.created).toBe(true);
+
+        const secondResponse = await postJson(baseUrl + '/capture-turn', {
+            ...context,
+            role: 'assistant',
+            content: 'Outside, rain begins tapping against the window.',
+            messageKey: '2:assistant',
+        });
+        const second = await secondResponse.json();
+        expect(secondResponse.status).toBe(200);
+        expect(second.capturedCount).toBe(3);
+        expect(second.queuedReflection.coalesced).toBe(true);
+        expect(second.queuedReflection.job.id).toBe(first.queuedReflection.job.id);
+        expect(second.queuedReflection.job.triggerEventId).not.toBe(first.queuedReflection.job.triggerEventId);
+
+        const params = new URLSearchParams(context);
+        const statusResponse = await fetch(baseUrl + '/memory/reflection-jobs/status?' + params.toString());
+        const status = await statusResponse.json();
+        expect(status.jobs.pending).toBe(1);
+    });
+
     test('namespaces captured chat IDs by character to prevent collisions', async () => {
         const capture = async characterId => {
             const response = await fetch(baseUrl + '/capture-turn', {

@@ -1051,7 +1051,9 @@ export class MemoryStore {
     }
 
     /**
-     * Persist a background reflection job. Jobs survive browser and server restarts.
+     * Persist background reflection work, coalescing new activity into an existing
+     * pending job for the same chat/character/mode so busy roleplay does not flood
+     * the durable queue. Jobs survive browser and server restarts.
      * @param {object} input Queue record.
      * @returns {object} The queued job and whether a new row was inserted.
      */
@@ -1060,19 +1062,48 @@ export class MemoryStore {
         const rawChatId = normalizeText(chatId, 256, 'Raw chat ID');
         const safeCharacterId = characterId == null ? '' : normalizeText(characterId, 256, 'Character ID');
         if (!['extract', 'dream'].includes(mode)) throw new TypeError('Reflection mode must be extract or dream.');
-        const eventId = normalizeText(triggerEventId, 256, 'Trigger event ID');
-        if (!Number.isSafeInteger(triggerCount) || triggerCount < 1) throw new TypeError('Trigger count must be a positive integer.');
+        const eventId = normalizeText(triggerEventId, 256, 'Reflection evidence event ID');
+        if (!Number.isSafeInteger(triggerCount) || triggerCount < 1) throw new TypeError('Reflection trigger count must be a positive integer.');
         if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Job timestamp must be a non-negative integer.');
 
-        const result = this.#db.prepare(
-            'INSERT OR IGNORE INTO memory_reflection_jobs ' +
-            '(id, scope_id, raw_chat_id, character_id, mode, trigger_event_id, trigger_count, status, attempts, available_at, created_at, updated_at) ' +
-            'VALUES (?, ?, ?, ?, ?, ?, ?, \'pending\', 0, ?, ?, ?)',
-        ).run(randomUUID(), target.scopeId, rawChatId, safeCharacterId, mode, eventId, triggerCount, createdAt, createdAt, createdAt);
-        const row = this.#db.prepare(
-            'SELECT * FROM memory_reflection_jobs WHERE trigger_event_id = ? AND mode = ?',
-        ).get(eventId, mode);
-        return { job: this.#toReflectionJob(row), created: result.changes > 0 };
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const pending = this.#db.prepare(
+                'SELECT * FROM memory_reflection_jobs WHERE scope_id = ? AND character_id = ? AND mode = ? ' +
+                'AND status = \'pending\' ORDER BY created_at ASC LIMIT 1',
+            ).get(target.scopeId, safeCharacterId, mode);
+
+            if (pending) {
+                // Keep each pending partition fresh rather than appending one job
+                // per message. Preserve queue age for fairness across characters.
+                const conflictingJob = this.#db.prepare(
+                    'SELECT id FROM memory_reflection_jobs WHERE trigger_event_id = ? AND mode = ? AND id <> ? LIMIT 1',
+                ).get(eventId, mode, pending.id);
+                const nextEventId = conflictingJob ? pending.trigger_event_id : eventId;
+                this.#db.prepare(
+                    'UPDATE memory_reflection_jobs SET raw_chat_id = ?, trigger_event_id = ?, trigger_count = ?, ' +
+                    'attempts = 0, available_at = ?, lease_until = NULL, claim_token = NULL, last_error = NULL, updated_at = ? ' +
+                    'WHERE id = ? AND status = \'pending\'',
+                ).run(rawChatId, nextEventId, triggerCount, createdAt, createdAt, pending.id);
+                const row = this.#db.prepare('SELECT * FROM memory_reflection_jobs WHERE id = ?').get(pending.id);
+                this.#db.exec('COMMIT;');
+                return { job: this.#toReflectionJob(row), created: false, coalesced: true };
+            }
+
+            const result = this.#db.prepare(
+                'INSERT OR IGNORE INTO memory_reflection_jobs ' +
+                '(id, scope_id, raw_chat_id, character_id, mode, trigger_event_id, trigger_count, status, attempts, available_at, created_at, updated_at) ' +
+                'VALUES (?, ?, ?, ?, ?, ?, ?, \'pending\', 0, ?, ?, ?)',
+            ).run(randomUUID(), target.scopeId, rawChatId, safeCharacterId, mode, eventId, triggerCount, createdAt, createdAt, createdAt);
+            const row = this.#db.prepare(
+                'SELECT * FROM memory_reflection_jobs WHERE trigger_event_id = ? AND mode = ?',
+            ).get(eventId, mode);
+            this.#db.exec('COMMIT;');
+            return { job: this.#toReflectionJob(row), created: result.changes > 0, coalesced: false };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
     }
 
     #toReflectionJob(row) {
@@ -1233,12 +1264,14 @@ export class MemoryStore {
 
     /**
      * Read recent captured turns across chats for autonomous cross-chat consolidation.
+     * Optionally exclude the active chat when assembling a mixed current/prior-chat review.
      * @param {object} options Query bounds.
      * @returns {object[]} Captured turn events, oldest first within the selected window.
      */
-    listCapturedTurnsAcrossChats({ limit = 500, characterId = null } = {}) {
+    listCapturedTurnsAcrossChats({ limit = 500, characterId = null, excludeScopeId = null } = {}) {
         const safeLimit = Math.max(1, Math.min(2000, Number.isInteger(limit) ? limit : 500));
         const safeCharacterId = characterId == null ? null : normalizeText(characterId, 256, 'Character ID');
+        const safeExcludedScopeId = excludeScopeId == null ? null : normalizeText(excludeScopeId, 256, 'Excluded chat scope ID');
         const params = ['chat', 'chat.user_turn', 'chat.assistant_turn'];
         let sql = 'SELECT * FROM memory_events WHERE scope = ? AND event_type IN (?, ?)';
         if (safeCharacterId) {
@@ -1246,6 +1279,11 @@ export class MemoryStore {
             // evict another character's history from its dreaming window.
             sql += ' AND json_extract(metadata_json, \'$.characterId\') = ?';
             params.push(safeCharacterId);
+        }
+        if (safeExcludedScopeId) {
+            // Current-chat evidence is loaded separately and must retain priority.
+            sql += ' AND scope_id <> ?';
+            params.push(safeExcludedScopeId);
         }
         sql += ' ORDER BY created_at DESC LIMIT ?';
         params.push(safeLimit);

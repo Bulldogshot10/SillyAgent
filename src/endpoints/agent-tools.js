@@ -587,15 +587,16 @@ router.post('/capture-turn', async (request, response) => {
         });
         const capturedCount = store.countCapturedTurns(scopedChatId);
         let queuedReflection = null;
-        if (!captured.duplicate && settings.autoDreamEnabled && capturedCount > 0 && capturedCount % 4 === 0) {
-            const mode = capturedCount % 12 === 0 ? 'dream' : 'extract';
+        // Review naturally after each completed assistant reply. This is driven by
+        // the native message lifecycle, never by a keyword, tool call, or turn-count milestone.
+        if (!captured.duplicate && body.role === 'assistant' && settings.autoDreamEnabled) {
             queuedReflection = store.enqueueReflectionJob({
                 scopeId: scopedChatId,
                 chatId: activeChatId,
                 characterId: activeCharacterId,
-                mode,
+                mode: 'extract',
                 triggerEventId: captured.event.id,
-                triggerCount: capturedCount,
+                triggerCount: Math.max(1, capturedCount),
             });
         }
         return response.json({ captured: true, duplicate: captured.duplicate, capturedCount, queuedReflection });

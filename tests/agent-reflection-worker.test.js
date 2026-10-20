@@ -185,6 +185,74 @@ describe('server-owned reflection worker', () => {
         expect(supersession[0].metadata.evidenceEventIds).toEqual([events[0].id, events[2].id]);
     });
 
+    test('reviews each assistant reply with prior-chat continuity while keeping chat memories evidence-local', async () => {
+        const oldJulia = store.captureTurn({
+            scopeId: 'older-julia-chat',
+            role: 'user',
+            content: 'PRIOR_JULIA_CHAT: The user prefers concise, warm replies.',
+            captureKey: 'prior-julia-chat-user',
+            metadata: { characterId: 'julia.png' },
+            createdAt: Date.now() - 100000,
+        }).event;
+        store.captureTurn({
+            scopeId: 'bella-other-chat',
+            role: 'user',
+            content: 'PRIVATE_BELLA_CHAT: Bella has an unrelated secret.',
+            captureKey: 'private-bella-chat-user',
+            metadata: { characterId: 'bella.png' },
+            createdAt: Date.now() - 90000,
+        });
+        const events = await captureTurns();
+        const modelResult = {
+            memories: [
+                {
+                    content: 'The user prefers concise, warm replies.',
+                    kind: 'preference',
+                    importance: 4,
+                    scope: 'character',
+                    evidenceIds: [oldJulia.id],
+                },
+                {
+                    content: 'This chat should store a fact that only appeared in a different chat.',
+                    kind: 'fact',
+                    importance: 3,
+                    scope: 'chat',
+                    evidenceIds: [oldJulia.id],
+                },
+            ],
+            skills: [],
+        };
+        globalThis.fetch = jest.fn(async (_url, options) => {
+            const request = JSON.parse(options.body);
+            const input = JSON.parse(request.messages[1].content);
+            const transcript = input.transcript;
+            const text = JSON.stringify(transcript);
+            expect(text).toContain('PRIOR_JULIA_CHAT');
+            expect(text).toContain('I am learning Rust to build a file-management CLI.');
+            expect(text).not.toContain('PRIVATE_BELLA_CHAT');
+            expect(transcript.find(item => item.id === oldJulia.id).isCurrentChat).toBe(false);
+            expect(transcript.find(item => item.id === events[0].id).isCurrentChat).toBe(true);
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    choices: [{ message: { content: JSON.stringify(modelResult) } }],
+                }),
+            };
+        });
+
+        await runReflectionWorkerOnce({
+            store,
+            directories: { root },
+            getSkillStore: async () => skills,
+        });
+
+        expect(store.listMemories({ scope: 'character', scopeId: 'julia.png' })
+            .some(memory => memory.content === modelResult.memories[0].content)).toBe(true);
+        expect(store.listMemories({ scope: 'chat', scopeId: 'character-chat-fixture' })
+            .some(memory => memory.content === modelResult.memories[1].content)).toBe(false);
+    });
+
     test('dreaming never sends another character\'s turns to the reflection model', async () => {
         const a = store.captureTurn({
             scopeId: 'julia-chat',

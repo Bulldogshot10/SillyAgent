@@ -560,10 +560,23 @@ describe('MemoryStore', () => {
             metadata: { characterId: 'bella.png' },
             createdAt: 2000,
         });
+        const current = store.captureTurn({
+            scopeId: 'julia-current-chat',
+            role: 'assistant',
+            content: 'Current Julia turn stays in the active-chat slice.',
+            captureKey: 'julia-current-turn',
+            metadata: { characterId: 'julia.png' },
+            createdAt: 3000,
+        }).event;
 
-        const rows = store.listCapturedTurnsAcrossChats({ limit: 1, characterId: 'julia.png' });
+        const rows = store.listCapturedTurnsAcrossChats({
+            limit: 10,
+            characterId: 'julia.png',
+            excludeScopeId: 'julia-current-chat',
+        });
         expect(rows).toHaveLength(1);
         expect(rows[0].id).toBe(julia.id);
+        expect(rows[0].id).not.toBe(current.id);
         expect(rows[0].metadata.characterId).toBe('julia.png');
     });
 
@@ -594,6 +607,21 @@ describe('MemoryStore', () => {
                 triggerCount: 4,
                 createdAt: 1000,
             }).created).toBe(false);
+
+            const coalesced = firstStore.enqueueReflectionJob({
+                scopeId: 'character-chat-a',
+                chatId: 'chat-a',
+                characterId: 'char-a.png',
+                mode: 'extract',
+                triggerEventId: 'event-b',
+                triggerCount: 5,
+                createdAt: 2000,
+            });
+            expect(coalesced.created).toBe(false);
+            expect(coalesced.coalesced).toBe(true);
+            expect(coalesced.job.id).toBe(enqueued.job.id);
+            expect(coalesced.job.triggerEventId).toBe('event-b');
+            expect(firstStore.listReflectionJobs({ status: 'pending' })).toHaveLength(1);
 
             firstStore.close();
             stores = stores.filter(store => store !== firstStore);

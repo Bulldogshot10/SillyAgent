@@ -14,7 +14,7 @@ The memory tool never exposes a global cross-character search to the model. Rele
 
 ## Autonomous runtime
 
-The same backend process owns the persistent SQLite reflection queue and worker. Every four captured turns queue routine reflection; every twelfth turn queues longer-horizon dreaming over the same character's history. A model-backed reflection pass can extract durable memories, supersede outdated memories with evidence, and improve reusable procedural skills after a verified successful workflow or user correction. A single explicit provider configuration supplies server-side background inference. No extension activation, quiet-generation browser API, manual dreaming action, or per-write human approval is used by this runtime.
+The same backend process owns the persistent SQLite reflection queue and worker. Every newly captured assistant reply queues or refreshes an automatic review without an explicit phrase, tool invocation, slash command, or turn-count threshold. Pending jobs coalesce per chat/character/mode to keep load bounded. Reviews combine recent active-chat evidence with bounded prior-chat context from the same character, letting one pass extract durable memories, supersede outdated facts with evidence, and improve reusable procedural skills after a verified successful workflow or user correction. A single explicit provider configuration supplies server-side background inference. No extension activation, quiet-generation browser API, manual dreaming action, or per-write human approval is used by this runtime.
 
 ## Security and validation
 
