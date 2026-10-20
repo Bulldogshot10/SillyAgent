@@ -584,7 +584,7 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
             restoreMemoryPanel();
             closeNativeDrawers();
             document.body.dataset.saView = 'chats';
-            document.body.dataset.saMobileScreen = isMobile() ? 'list' : 'chat';
+            document.body.dataset.saMobileScreen = isMobile() && !getCurrentChatId() ? 'list' : 'chat';
             mountContacts();
             setActiveNavigation('chats');
             syncActiveContact();
@@ -650,6 +650,9 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
 
         eventSource.on(event_types.CHAT_CHANGED, () => {
             window.setTimeout(() => {
+                if (isMobile() && document.body.dataset.saView === 'chats' && getCurrentChatId()) {
+                    document.body.dataset.saMobileScreen = 'chat';
+                }
                 syncActiveContact();
                 queueRecentChatsRefresh();
             }, 80);
