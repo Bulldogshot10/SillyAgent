@@ -99,6 +99,22 @@ function buildMatchExpression(tokens) {
 const CJK_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
 /**
+ * Whether the current or supplied Node.js version provides the built-in SQLite API.
+ * The main application can still run on Node.js 20; persistent memory needs 22.5+.
+ * @param {string} version Node.js version such as 20.20.0 or v22.5.0.
+ * @returns {boolean} Whether the runtime meets the memory feature requirement.
+ */
+export function supportsPersistentMemoryRuntime(version = process.versions.node) {
+    const match = typeof version === 'string' ? /^v?(\\d+)\\.(\\d+)\\.(\\d+)/u.exec(version) : null;
+    if (!match) return false;
+
+    const major = Number(match[1]);
+    const minor = Number(match[2]);
+    return major > 22 || (major === 22 && minor >= 5);
+}
+
+
+/**
  * Per-user persistent memory using Node's built-in SQLite and FTS5.
  * Each user should have a separate database file.
  */
@@ -117,6 +133,12 @@ export class MemoryStore {
      */
     static async open(databasePath) {
         if (typeof databasePath !== 'string' || !databasePath) throw new TypeError('A memory database path is required.');
+        if (!supportsPersistentMemoryRuntime()) {
+            throw new Error(
+                'Persistent memory is unavailable on Node.js ' + process.versions.node
+                + '. This feature requires Node.js 22.5+ with the built-in node:sqlite module; the rest of SillyTavern can still run.',
+            );
+        }
         if (databasePath !== ':memory:') {
             await fsPromises.mkdir(path.dirname(path.resolve(databasePath)), { recursive: true });
         }
