@@ -1320,11 +1320,50 @@ export class MemoryStore {
         }
     }
 
-    getSummary() {
+    getSummary({ characterId = null, chatId = null } = {}) {
+        const characterScopeId = typeof characterId === 'string' && characterId.trim() ? characterId.trim() : null;
+        const chatScopeId = typeof chatId === 'string' && chatId.trim() ? chatId.trim() : null;
+        if (!characterScopeId && !chatScopeId) {
+            return {
+                events: this.#db.prepare('SELECT COUNT(*) AS count FROM memory_events').get().count,
+                acceptedMemories: this.#db.prepare('SELECT COUNT(*) AS count FROM memories').get().count,
+                pendingProposals: this.#db.prepare('SELECT COUNT(*) AS count FROM memory_proposals WHERE status = \'pending\'').get().count,
+            };
+        }
+
+        const recordConditions = [];
+        const recordParams = [];
+        if (characterScopeId) {
+            recordConditions.push('(scope = \'character\' AND scope_id = ?)');
+            recordParams.push(characterScopeId);
+        }
+        if (chatScopeId) {
+            recordConditions.push('(scope = \'chat\' AND scope_id = ?)');
+            recordParams.push(chatScopeId);
+        }
+        const recordWhere = recordConditions.join(' OR ');
+
+        const eventConditions = [];
+        const eventParams = [];
+        if (characterScopeId) {
+            eventConditions.push('(scope = \'character\' AND scope_id = ?)');
+            eventParams.push(characterScopeId);
+            eventConditions.push('(scope = \'chat\' AND json_extract(metadata_json, \'$.characterId\') = ?)');
+            eventParams.push(characterScopeId);
+        }
+        if (chatScopeId) {
+            eventConditions.push('(scope = \'chat\' AND scope_id = ?)');
+            eventParams.push(chatScopeId);
+        }
+
         return {
-            events: this.#db.prepare('SELECT COUNT(*) AS count FROM memory_events').get().count,
-            acceptedMemories: this.#db.prepare('SELECT COUNT(*) AS count FROM memories').get().count,
-            pendingProposals: this.#db.prepare('SELECT COUNT(*) AS count FROM memory_proposals WHERE status = \'pending\'').get().count,
+            events: this.#db.prepare('SELECT COUNT(*) AS count FROM memory_events WHERE ' + eventConditions.join(' OR '))
+                .get(...eventParams).count,
+            acceptedMemories: this.#db.prepare('SELECT COUNT(*) AS count FROM memories WHERE ' + recordWhere)
+                .get(...recordParams).count,
+            pendingProposals: this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memory_proposals WHERE status = \'pending\' AND (' + recordWhere + ')',
+            ).get(...recordParams).count,
         };
     }
 
