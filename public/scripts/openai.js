@@ -3233,17 +3233,25 @@ export function getStreamingReply(data, state, { chatCompletionSource = null, ov
         if (Array.isArray(inlineData) && inlineData.length > 0) {
             state.images.push(...inlineData.map(x => `data:${x.mimeType};base64,${x.data}`).filter(isDataURL));
         }
+        // Gemini may return multiple text parts in one candidate chunk. Preserve all of
+        // them instead of silently dropping everything after the first part.
+        const parts = data?.candidates?.[0]?.content?.parts || [];
         if (show_thoughts) {
-            state.reasoning += (data?.candidates?.[0]?.content?.parts?.filter(x => x.thought)?.map(x => x.text)?.[0] || '');
+            state.reasoning += parts
+                .filter(part => part.thought && typeof part.text === 'string')
+                .map(part => part.text)
+                .join('');
         }
         // Extract thought signatures from streaming chunks (typically in final chunk)
-        const parts = data?.candidates?.[0]?.content?.parts || [];
         parts.forEach((part) => {
             if (part.thoughtSignature && typeof part.text === 'string') {
                 state.signature = part.thoughtSignature;
             }
         });
-        return data?.candidates?.[0]?.content?.parts?.filter(x => !x.thought)?.map(x => x.text)?.[0] || '';
+        return parts
+            .filter(part => !part.thought && typeof part.text === 'string')
+            .map(part => part.text)
+            .join('');
     } else if (chat_completion_source === chat_completion_sources.COHERE) {
         return data?.delta?.message?.content?.text || data?.delta?.message?.tool_plan || '';
     } else if (chat_completion_source === chat_completion_sources.DEEPSEEK) {
