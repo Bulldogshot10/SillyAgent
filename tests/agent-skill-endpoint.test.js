@@ -97,6 +97,7 @@ describe('agent-managed skills API', () => {
     test('auto-activates agent-authored revisions by default and progressively discloses content', async () => {
         const createResponse = await postJson(baseUrl + '/execute', {
             name: 'skill_propose',
+            activeCharacterId: 'julia-card.png',
             arguments: {
                 name: 'Agentic Skill Lifecycle',
                 description: 'A repeatable workflow for creating and improving agent-managed skills.',
@@ -112,20 +113,21 @@ describe('agent-managed skills API', () => {
         expect(created.result.revision.status).toBe('active');
         expect(created.result.requiresApproval).toBe(false);
 
-        const catalogResponse = await fetch(baseUrl + '/skills');
+        const catalogResponse = await fetch(baseUrl + '/skills?activeCharacterId=julia-card.png');
         const catalog = await catalogResponse.json();
         const entry = catalog.skills.find(skill => skill.slug === 'agentic-skill-lifecycle');
         expect(catalogResponse.status).toBe(200);
         expect(entry.version).toBe(1);
         expect(entry.content).toBeUndefined();
 
-        const readResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle');
+        const readResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle?activeCharacterId=julia-card.png');
         const loaded = await readResponse.json();
         expect(readResponse.status).toBe(200);
         expect(loaded.skill.content).toContain('metadata indicates a match');
 
         const modelReadResponse = await postJson(baseUrl + '/execute', {
             name: 'skill_read',
+            activeCharacterId: 'julia-card.png',
             arguments: { slug: 'agentic-skill-lifecycle' },
         });
         const modelRead = await modelReadResponse.json();
@@ -154,21 +156,21 @@ describe('agent-managed skills API', () => {
         expect(proposed.result.requiresApproval).toBe(false);
         expect(proposed.result.revision.status).toBe('active');
 
-        const activeResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle');
+        const activeResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle?activeCharacterId=julia-card.png');
         const active = await activeResponse.json();
         expect(active.skill.version).toBe(2);
         expect(active.skill.content).toContain('activate the smallest evidence-backed improvement automatically');
 
-        const pendingResponse = await fetch(baseUrl + '/skills/pending');
+        const pendingResponse = await fetch(baseUrl + '/skills/pending?activeCharacterId=julia-card.png');
         const pending = await pendingResponse.json();
         expect(pending.revisions.some(revision => revision.slug === 'agentic-skill-lifecycle' && revision.version === 2)).toBe(false);
 
-        const revisionResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle/revisions/2');
+        const revisionResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle/revisions/2?activeCharacterId=julia-card.png');
         const revision = await revisionResponse.json();
         expect(revisionResponse.status).toBe(200);
         expect(revision.revision.status).toBe('active');
 
-        const historyResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle/history');
+        const historyResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle/history?activeCharacterId=julia-card.png');
         const history = await historyResponse.json();
         expect(history.revisions.map(revision => revision.version)).toEqual([2, 1]);
         expect(history.revisions.every(item => item.checksum)).toBe(true);
@@ -180,6 +182,7 @@ describe('agent-managed skills API', () => {
     test('rejects malformed review decisions and respects the independent skills-write switch', async () => {
         const invalidReview = await postJson(baseUrl + '/skills/agentic-skill-lifecycle/revisions/2/review', {
             decision: 'maybe',
+            activeCharacterId: 'julia-card.png',
         });
         expect(invalidReview.status).toBe(400);
 
