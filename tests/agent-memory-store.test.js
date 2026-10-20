@@ -29,6 +29,53 @@ describe('MemoryStore', () => {
         expect(supportsPersistentMemoryRuntime(null)).toBe(false);
     });
 
+    test('secures persistent memory storage with private POSIX permissions', async () => {
+        if (process.platform === 'win32') return;
+
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-memory-permissions-'));
+        const databasePath = path.join(folder, 'memory.sqlite');
+        let store;
+
+        try {
+            await fs.chmod(folder, 0o755);
+            store = await createMemoryStore(databasePath);
+
+            expect((await fs.stat(folder)).mode & 0o777).toBe(0o700);
+            expect((await fs.stat(databasePath)).mode & 0o777).toBe(0o600);
+
+            for (const sidecar of [databasePath + '-wal', databasePath + '-shm']) {
+                try {
+                    expect((await fs.stat(sidecar)).mode & 0o777).toBe(0o600);
+                } catch (error) {
+                    if (error?.code !== 'ENOENT') throw error;
+                }
+            }
+        } finally {
+            if (store) {
+                store.close();
+                stores = stores.filter(item => item !== store);
+            }
+            await fs.rm(folder, { recursive: true, force: true });
+        }
+    });
+
+    test('rejects a symbolic link as the persistent memory database', async () => {
+        if (process.platform === 'win32') return;
+
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-memory-symlink-'));
+        const targetPath = path.join(folder, 'target.sqlite');
+        const linkPath = path.join(folder, 'memory.sqlite');
+
+        try {
+            await fs.writeFile(targetPath, 'leave this target untouched');
+            await fs.symlink(targetPath, linkPath);
+            await expect(MemoryStore.open(linkPath)).rejects.toThrow(/symbolic link/);
+            expect(await fs.readFile(targetPath, 'utf8')).toBe('leave this target untouched');
+        } finally {
+            await fs.rm(folder, { recursive: true, force: true });
+        }
+    });
+
     test('keeps proposals out of retrieval until approved', async () => {
         const store = await createMemoryStore();
         const proposal = store.proposeMemory({

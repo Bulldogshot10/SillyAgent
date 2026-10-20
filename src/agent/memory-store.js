@@ -9,6 +9,44 @@ const MAX_CONTENT = 4000;
 const MAX_EVENT_CONTENT = 12000;
 const MAX_METADATA_BYTES = 8192;
 
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
+/**
+ * Enforce private permissions for persistent memory storage on POSIX systems.
+ * Database symlinks are rejected so a local path cannot silently redirect memory
+ * storage to an unrelated file.
+ * @param {string} databasePath SQLite database path.
+ * @returns {Promise<void>}
+ */
+async function secureMemoryStorage(databasePath) {
+    const resolvedDatabasePath = path.resolve(databasePath);
+    const directoryPath = path.dirname(resolvedDatabasePath);
+    await fsPromises.mkdir(directoryPath, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+
+    if (process.platform === 'win32') return;
+
+    const directoryInfo = await fsPromises.lstat(directoryPath);
+    if (directoryInfo.isSymbolicLink() || !directoryInfo.isDirectory()) {
+        throw new Error('Persistent memory storage directory must be a real directory, not a symbolic link.');
+    }
+    await fsPromises.chmod(directoryPath, PRIVATE_DIRECTORY_MODE);
+
+    for (const filePath of [resolvedDatabasePath, resolvedDatabasePath + '-wal', resolvedDatabasePath + '-shm']) {
+        let fileInfo;
+        try {
+            fileInfo = await fsPromises.lstat(filePath);
+        } catch (error) {
+            if (error?.code === 'ENOENT') continue;
+            throw error;
+        }
+        if (fileInfo.isSymbolicLink()) {
+            throw new Error('Persistent memory storage files must not be symbolic links.');
+        }
+        await fsPromises.chmod(filePath, PRIVATE_FILE_MODE);
+    }
+}
+
 function normalizeScope(scope, scopeId) {
     if (!SCOPES.has(scope)) throw new TypeError('Memory scope must be user, character, or chat.');
     if (scope === 'user') return { scope, scopeId: '' };
@@ -140,7 +178,7 @@ export class MemoryStore {
             );
         }
         if (databasePath !== ':memory:') {
-            await fsPromises.mkdir(path.dirname(path.resolve(databasePath)), { recursive: true });
+            await secureMemoryStorage(databasePath);
         }
 
         let DatabaseSync;
@@ -152,7 +190,11 @@ export class MemoryStore {
 
         const database = new DatabaseSync(databasePath);
         try {
-            return new MemoryStore(database);
+            const store = new MemoryStore(database);
+            if (databasePath !== ':memory:') {
+                await secureMemoryStorage(databasePath);
+            }
+            return store;
         } catch (error) {
             database.close();
             throw new Error('Could not initialize the memory database. Check SQLite FTS5 support and database permissions.', { cause: error });
@@ -160,7 +202,7 @@ export class MemoryStore {
     }
 
     #initialize() {
-        this.#db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2500;');
+        this.#db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2500; PRAGMA secure_delete = ON; PRAGMA trusted_schema = OFF;');
         this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
         this.#db.exec(
             'CREATE TABLE IF NOT EXISTS memory_events (' +

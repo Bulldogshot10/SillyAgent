@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { promises as fsPromises } from 'node:fs';
 import express from 'express';
 
 import { getConfigValue } from '../util.js';
@@ -27,7 +26,6 @@ async function getMemoryStore(request) {
     if (typeof root !== 'string' || !root) throw new Error('Could not determine the current user data directory.');
 
     const directory = path.join(root, 'sillyagent');
-    await fsPromises.mkdir(directory, { recursive: true });
     const databasePath = path.join(directory, 'memory.sqlite');
 
     if (!memoryStores.has(databasePath)) {
