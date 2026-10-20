@@ -241,6 +241,8 @@ async function processAutonomousReflectionQueue() {
 
     autonomousReflectionInProgress = true;
     let claimedJob = null;
+    let shouldPollAgain = false;
+    let retryDelayMs = 1000;
     try {
         const claim = await requestApi('/memory/reflection-jobs/claim', {
             method: 'POST',
@@ -252,6 +254,7 @@ async function processAutonomousReflectionQueue() {
         const job = claim.job;
         if (!job) return;
         claimedJob = job;
+        shouldPollAgain = true;
 
         const context = await requestApi('/memory/reflection-context', {
             method: 'POST',
@@ -323,6 +326,7 @@ async function processAutonomousReflectionQueue() {
             console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' completed with no new durable memories.');
         }
     } catch (error) {
+        retryDelayMs = 16000;
         console.debug('[SillyAgent memory] Autonomous reflection job failed:', error);
         if (claimedJob) {
             try {
@@ -340,9 +344,11 @@ async function processAutonomousReflectionQueue() {
     } finally {
         autonomousReflectionInProgress = false;
         if (reflectionRetryTimer) clearTimeout(reflectionRetryTimer);
-        reflectionRetryTimer = setTimeout(() => {
-            void processAutonomousReflectionQueue();
-        }, 5000);
+        if (shouldPollAgain) {
+            reflectionRetryTimer = setTimeout(() => {
+                void processAutonomousReflectionQueue();
+            }, retryDelayMs);
+        }
     }
 }
 
