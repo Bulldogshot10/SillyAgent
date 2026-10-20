@@ -471,7 +471,11 @@ router.post('/capture-turn', async (request, response) => {
         const capturedCount = store.countCapturedTurns(activeChatId);
         let dreaming = null;
         if (!captured.duplicate && settings.autoDreamEnabled && capturedCount > 0 && capturedCount % 12 === 0) {
-            dreaming = new DreamingEngine(store).run({ scopeId: activeChatId, requireApproval: settings.requireApproval });
+            dreaming = new DreamingEngine(store).run({
+                scopeId: activeChatId,
+                activeCharacterId,
+                requireApproval: settings.requireApproval,
+            });
         }
         return response.json({ captured: true, duplicate: captured.duplicate, capturedCount, dreaming });
     } catch (error) {
