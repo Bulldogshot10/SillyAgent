@@ -333,7 +333,7 @@ describe('MemoryStore', () => {
         const rejected = store.proposeMemory({
             scope: 'user',
             content,
-            kind: 'preference',
+            kind: 'relationship',
         });
         store.reviewProposal(rejected.id, 'reject');
 
