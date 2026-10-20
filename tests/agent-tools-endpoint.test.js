@@ -381,7 +381,30 @@ describe('agent tools API', () => {
         expect(retrieval.enabled).toBe(true);
         expect(retrieval.memories.some(item => item.content === 'A brass telescope belongs in the attic.')).toBe(true);
 
-        const deleteResponse = await fetch(baseUrl + '/memory/' + memory.id, { method: 'DELETE' });
+        const otherProposalResponse = await postJson(baseUrl + '/execute', {
+            activeChatId: 'bella-chat-test',
+            activeCharacterId: 'bella-card.png',
+            name: 'memory_propose',
+            arguments: { content: 'A crystal orb belongs to Bella.', kind: 'fact' },
+        });
+        const otherProposal = await otherProposalResponse.json();
+        expect(otherProposal.result.memory.scope).toBe('character');
+        expect(otherProposal.result.memory.scopeId).toBe('bella-card.png');
+
+        const crossCharacterDelete = await fetch(
+            baseUrl + '/memory/' + encodeURIComponent(otherProposal.result.memory.id)
+                + '?activeCharacterId=julia-card.png&activeChatId=chat-attic-test',
+            { method: 'DELETE' },
+        );
+        expect(crossCharacterDelete.status).toBe(404);
+        const bellaList = await fetch(baseUrl + '/memory/list?scope=character&scopeId=bella-card.png&activeCharacterId=bella-card.png');
+        const bellaMemories = await bellaList.json();
+        expect(bellaMemories.memories.some(item => item.id === otherProposal.result.memory.id)).toBe(true);
+
+        const deleteResponse = await fetch(
+            baseUrl + '/memory/' + memory.id + '?activeCharacterId=julia-card.png&activeChatId=chat-attic-test',
+            { method: 'DELETE' },
+        );
         expect(deleteResponse.status).toBe(200);
         const finalListResponse = await fetch(baseUrl + '/memory/list?scope=character&scopeId=julia-card.png&activeCharacterId=julia-card.png');
         const finalList = await finalListResponse.json();
