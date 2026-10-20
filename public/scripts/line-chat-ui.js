@@ -643,7 +643,7 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
         buildShell();
         document.body.classList.add('sa-line-ui');
         document.body.dataset.saView = 'chats';
-        document.body.dataset.saMobileScreen = isMobile() ? 'list' : 'chat';
+        document.body.dataset.saMobileScreen = isMobile() && !getCurrentChatId() ? 'list' : 'chat';
 
         mountContacts();
         setActiveNavigation('chats');
