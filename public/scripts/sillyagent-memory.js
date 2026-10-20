@@ -179,7 +179,11 @@ function renderMemories(memories) {
         remove.addEventListener('click', async () => {
             if (!window.confirm('Delete this memory and same-text copies in its scope?')) return;
             try {
-                await requestApi(runtimeRef, '/memory/' + encodeURIComponent(memory.id), { method: 'DELETE' });
+                const ids = contextIds(runtimeRef);
+                const params = new URLSearchParams();
+                if (ids.activeCharacterId) params.set('activeCharacterId', ids.activeCharacterId);
+                if (ids.activeChatId) params.set('activeChatId', ids.activeChatId);
+                await requestApi(runtimeRef, '/memory/' + encodeURIComponent(memory.id) + '?' + params.toString(), { method: 'DELETE' });
                 await refreshPanel(runtimeRef);
                 setStatus('Memory deleted. Captured chat history remains separate.');
             } catch (error) {
