@@ -264,5 +264,17 @@ describe('reflection provider configuration', () => {
             model: 'remote-fixture',
             secretKey: 'api_key_openai',
         })).toThrow(/must use HTTP or HTTPS and must not include embedded credentials/u);
+        expect(() => saveReflectionProviderConfig(root, {
+            enabled: false,
+            endpoint: 'http://reflection.example/v1/chat/completions',
+            model: 'remote-fixture',
+            secretKey: 'api_key_openai',
+        })).toThrow(/must use HTTPS to protect prompts and credentials in transit/u);
+        expect(() => saveReflectionProviderConfig(root, {
+            enabled: false,
+            endpoint: 'http://localhost:11434/v1/chat/completions',
+            model: 'local-fixture',
+            secretKey: 'none',
+        })).not.toThrow();
     });
 });

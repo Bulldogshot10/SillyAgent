@@ -18,7 +18,7 @@ The same backend process owns the persistent SQLite reflection queue and worker.
 
 ## Security and validation
 
-Tool arguments are schema-validated before execution. Privileged tool permissions default to denied unless the registered tool and calling policy allow them. Memory reflection candidates must cite known evidence event IDs, stay within bounded schemas and scopes, and cannot set another character's memory partition. Memory deletion, proposal review, and visible summary counts are constrained to the active character and chat; global `all` listing is rejected. Credentials are resolved server-side from SillyTavern Secrets; neither secrets nor raw upstream response bodies are stored in job payloads. Skills are Markdown procedures, not executable code. Arbitrary shell execution, arbitrary JavaScript evaluation, and unrestricted file access are not built-in tools.
+Tool arguments are schema-validated before execution. Privileged tool permissions default to denied unless the registered tool and calling policy allow them. Memory reflection candidates must cite known evidence event IDs, stay within bounded schemas and scopes, and cannot set another character's memory partition. Memory deletion, proposal review, and visible summary counts are constrained to the active character and chat; global `all` listing is rejected. Credentials are resolved server-side from SillyTavern Secrets; non-loopback reflection endpoints must use HTTPS, and neither secrets nor raw upstream response bodies are stored in job payloads. Skills are Markdown procedures, not executable code. Arbitrary shell execution, arbitrary JavaScript evaluation, and unrestricted file access are not built-in tools.
 
 ## Verification
 

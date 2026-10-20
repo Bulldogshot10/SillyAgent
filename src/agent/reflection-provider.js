@@ -92,6 +92,14 @@ function validateConfig(input) {
         if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash || parsed.search) {
             throw new TypeError('Reflection endpoint must use HTTP or HTTPS and must not include embedded credentials, query parameters, or a fragment.');
         }
+        const hostname = parsed.hostname.toLowerCase().replace(/\.$/u, '');
+        const isLoopback = hostname === 'localhost'
+            || hostname.endsWith('.localhost')
+            || /^127(?:\.\d{1,3}){3}$/u.test(hostname)
+            || hostname === '[::1]';
+        if (parsed.protocol === 'http:' && !isLoopback) {
+            throw new TypeError('Non-loopback reflection endpoints must use HTTPS to protect prompts and credentials in transit.');
+        }
         if (!/\/chat\/completions\/?$/iu.test(parsed.pathname)) {
             throw new TypeError('Reflection endpoint path must end in /chat/completions.');
         }
