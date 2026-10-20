@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { createHash } from 'node:crypto';
 import express from 'express';
 
@@ -473,104 +472,7 @@ router.post('/memory/reflection-provider', async (request, response) => {
 router.get('/memory/reflection-jobs/status', async (request, response) => {
     try {
         const store = await getMemoryStore(request);
-        const jobs = store.listReflectionJobs({ limit: 100 }).map(({ claimToken, ...job }) => job);
-        return response.json({ jobs: store.getReflectionJobSummary(), recent: jobs });
-    } catch (error) {
-        return sendMemoryError(response, error);
-    }
-});
-
-router.post('/memory/reflection-jobs/claim', async (request, response) => {
-    const activeChatId = getSafeContextId(request.body?.activeChatId);
-    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
-    if (!activeChatId) {
-        return response.status(400).json({
-            ok: false,
-            error: { code: 'missing_chat_id', message: 'Claiming a reflection job requires an active chat.' },
-        });
-    }
-    try {
-        const store = await getMemoryStore(request);
-        const job = store.claimReflectionJob({
-            scopeId: getScopedChatId(activeChatId, activeCharacterId),
-            characterId: activeCharacterId,
-        });
-        return response.json({ ok: true, job });
-    } catch (error) {
-        return sendMemoryError(response, error);
-    }
-});
-
-router.post('/memory/reflection-context', async (request, response) => {
-    const activeChatId = getSafeContextId(request.body?.activeChatId);
-    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
-    const mode = request.body?.mode === 'dream' ? 'dream' : 'extract';
-    if (!activeChatId) {
-        return response.status(400).json({
-            ok: false,
-            error: { code: 'missing_chat_id', message: 'Reflection context requires an active chat.' },
-        });
-    }
-    try {
-        const store = await getMemoryStore(request);
-        const scopedChatId = getScopedChatId(activeChatId, activeCharacterId);
-        const eventTypes = ['chat.user_turn', 'chat.assistant_turn'];
-        const events = mode === 'dream' && activeCharacterId
-            ? store.listCapturedTurnsAcrossChats({ limit: 2000 })
-                .filter(event => event.metadata?.characterId === activeCharacterId)
-            : store.listEvents({ scope: 'chat', scopeId: scopedChatId, eventTypes, limit: 100 });
-        const turns = events.slice(-100).map(event => ({
-            id: event.id,
-            chatId: event.scopeId,
-            role: event.metadata?.role === 'assistant' || event.eventType === 'chat.assistant_turn' ? 'assistant' : 'user',
-            content: event.content,
-            createdAt: event.createdAt,
-        }));
-        return response.json({
-            ok: true,
-            activeChatId: scopedChatId,
-            activeCharacterId,
-            mode,
-            turns,
-        });
-    } catch (error) {
-        return sendMemoryError(response, error);
-    }
-});
-
-router.post('/memory/reflection-jobs/:id/complete', async (request, response) => {
-    const claimToken = request.body?.claimToken;
-    if (typeof claimToken !== 'string' || !claimToken.trim()) {
-        return response.status(400).json({
-            ok: false,
-            error: { code: 'missing_claim_token', message: 'A reflection job claim token is required.' },
-        });
-    }
-    try {
-        const store = await getMemoryStore(request);
-        const completed = store.completeReflectionJob(request.params.id, claimToken);
-        return response.status(completed ? 200 : 409).json({ ok: completed, completed });
-    } catch (error) {
-        return sendMemoryError(response, error);
-    }
-});
-
-router.post('/memory/reflection-jobs/:id/fail', async (request, response) => {
-    const claimToken = request.body?.claimToken;
-    if (typeof claimToken !== 'string' || !claimToken.trim()) {
-        return response.status(400).json({
-            ok: false,
-            error: { code: 'missing_claim_token', message: 'A reflection job claim token is required.' },
-        });
-    }
-    try {
-        const store = await getMemoryStore(request);
-        const failed = store.failReflectionJob(
-            request.params.id,
-            claimToken,
-            String(request.body?.error ?? 'Reflection failed.').slice(0, 500),
-        );
-        return response.status(failed ? 200 : 409).json({ ok: failed, failed });
+        return response.json({ jobs: store.getReflectionJobSummary() });
     } catch (error) {
         return sendMemoryError(response, error);
     }
