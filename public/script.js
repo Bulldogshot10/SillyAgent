@@ -276,6 +276,7 @@ import { initDataMaid } from './scripts/data-maid.js';
 import { clearItemizedPrompts, deleteItemizedPromptForMessage, deleteItemizedPrompts, findItemizedPromptSet, initItemizedPrompts, itemizedParams, itemizedPrompts, loadItemizedPrompts, promptItemize, replaceItemizedPromptText, saveItemizedPrompts, swapItemizedPrompts } from './scripts/itemized-prompts.js';
 import { getSystemMessageByType, initSystemMessages, SAFETY_CHAT, sendSystemMessage, system_message_types, system_messages } from './scripts/system-messages.js';
 import { event_types, eventSource } from './scripts/events.js';
+import { initSillyAgentMemory } from './scripts/sillyagent-memory.js';
 import { initAccessibility } from './scripts/a11y.js';
 import { applyStreamFadeIn } from './scripts/util/stream-fadein.js';
 import { initDomHandlers } from './scripts/dom-handlers.js';
@@ -757,6 +758,18 @@ async function firstLoadInit() {
     initBookmarks();
     await getUserAvatars(true, user_avatar);
     await getCharacters();
+    initSillyAgentMemory({
+        eventSource,
+        eventTypes: event_types,
+        getCurrentChatId,
+        getCharacters: () => characters,
+        getCharacterIndex: () => this_chid,
+        isGroupSelected: () => Boolean(selected_group),
+        getChat: () => chat,
+        getRequestHeaders,
+        getOpenAISettings: () => oai_settings,
+        saveSettingsDebounced,
+    });
     await getBackgrounds();
     await initTokenizers();
     initBackgrounds();
