@@ -559,15 +559,59 @@ export class MemoryStore {
                 this.#db.exec('COMMIT;');
                 return false;
             }
-            this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(memoryId);
-            this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(memoryId);
-            this.#db.prepare('DELETE FROM memories WHERE id = ?').run(memoryId);
+
+            // Forget every copy of this content within the same scope. The same text
+            // in another chat/character scope remains an independent memory.
+            const relatedMemories = this.#db.prepare(
+                'SELECT * FROM memories WHERE scope = ? AND scope_id = ? AND content = ?',
+            ).all(row.scope, row.scope_id, row.content);
+            const relatedProposals = this.#db.prepare(
+                'SELECT * FROM memory_proposals WHERE scope = ? AND scope_id = ? AND content = ?',
+            ).all(row.scope, row.scope_id, row.content);
+            const relatedEvents = this.#db.prepare(
+                'SELECT id FROM memory_events WHERE scope = ? AND scope_id = ? ' +
+                'AND event_type = ? AND content = ?',
+            ).all(row.scope, row.scope_id, 'memory.proposal_created', row.content);
+
+            const sourceEventIds = new Set([
+                ...relatedMemories.map(memory => memory.source_event_id),
+                ...relatedProposals.map(proposal => proposal.source_event_id),
+                ...relatedEvents.map(event => event.id),
+            ].filter(id => typeof id === 'string' && id));
+
+            for (const memory of relatedMemories) {
+                this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(memory.id);
+                this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(memory.id);
+            }
+
+            const deletedMemories = this.#db.prepare(
+                'DELETE FROM memories WHERE scope = ? AND scope_id = ? AND content = ?',
+            ).run(row.scope, row.scope_id, row.content).changes;
+            const deletedProposals = this.#db.prepare(
+                'DELETE FROM memory_proposals WHERE scope = ? AND scope_id = ? AND content = ?',
+            ).run(row.scope, row.scope_id, row.content).changes;
+
+            let deletedSourceEvents = 0;
+            for (const eventId of sourceEventIds) {
+                const result = this.#db.prepare(
+                    'DELETE FROM memory_events WHERE id = ? AND event_type = ? ' +
+                    'AND NOT EXISTS (SELECT 1 FROM memory_proposals p WHERE p.source_event_id = memory_events.id) ' +
+                    'AND NOT EXISTS (SELECT 1 FROM memories m WHERE m.source_event_id = memory_events.id)',
+                ).run(eventId, 'memory.proposal_created');
+                deletedSourceEvents += result.changes;
+            }
+
             this.recordEvent({
                 scope: row.scope,
                 scopeId: row.scope_id,
                 eventType: 'memory.deleted',
-                content: 'Memory deleted by user.',
-                metadata: { memoryId, kind: row.kind },
+                content: 'Memory and linked records purged by user.',
+                metadata: {
+                    memoryId,
+                    purgedMemories: deletedMemories,
+                    purgedProposals: deletedProposals,
+                    purgedSourceEvents: deletedSourceEvents,
+                },
             });
             this.#db.exec('COMMIT;');
             return true;
@@ -576,7 +620,6 @@ export class MemoryStore {
             throw error;
         }
     }
-
     /**
      * Record a chat turn once, even if frontend lifecycle events fire more than once.
      * Raw turns remain events only; they do not become approved memories directly.
