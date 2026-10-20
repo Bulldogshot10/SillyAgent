@@ -62,6 +62,8 @@ describe('agent tools API', () => {
         expect(body.tools.some(tool => tool.function.name === 'roleplay_roll_dice')).toBe(true);
         expect(body.tools.some(tool => tool.function.name === 'memory_search')).toBe(true);
         expect(body.tools.some(tool => tool.function.name === 'memory_propose')).toBe(true);
+        expect(body.tools.some(tool => tool.function.name === 'skill_search')).toBe(true);
+        expect(body.tools.some(tool => tool.function.name === 'skill_propose')).toBe(true);
     });
 
     test('defaults memory capture and dreaming to autonomous mode', async () => {
