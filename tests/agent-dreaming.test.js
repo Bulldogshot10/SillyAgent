@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe('DreamingEngine', () => {
-    test('proposes recurring topics for review without auto-approving them', async () => {
+    test('autonomously stores recurring topics as retrievable memories by default', async () => {
         const memoryStore = await createStore();
         const turns = [
             ['user', 'We keep returning to the silver key mystery.'],
@@ -33,11 +33,36 @@ describe('DreamingEngine', () => {
         expect(dream.eventsReviewed).toBe(3);
         expect(dream.candidatesCreated).toBeGreaterThan(0);
         expect(dream.topics.some(topic => topic.includes('silver key'))).toBe(true);
-        expect(memoryStore.listProposals({ status: 'pending' }).some(proposal => proposal.metadata.origin === 'dreaming')).toBe(true);
-        expect(memoryStore.searchMemories({ query: 'silver key', scope: 'chat', activeChatId: 'chat-1' })).toHaveLength(0);
+        expect(dream.memoriesAccepted).toBeGreaterThan(0);
+        expect(dream.proposalsPending).toBe(0);
+        expect(memoryStore.listProposals({ status: 'approved' }).some(proposal => proposal.metadata.origin === 'dreaming')).toBe(true);
+        expect(memoryStore.searchMemories({ query: 'silver key', scope: 'chat', activeChatId: 'chat-1' }).length).toBeGreaterThan(0);
 
         const again = new DreamingEngine(memoryStore).run({ scopeId: 'chat-1' });
         expect(again.candidatesCreated).toBe(0);
+    });
+
+    test('keeps dreaming proposals pending when human review is enabled', async () => {
+        const memoryStore = await createStore();
+        memoryStore.updateSettings({ requireApproval: true });
+        const turns = [
+            ['user', 'We keep returning to the copper moon observatory.'],
+            ['assistant', 'The copper moon observatory is central to the mystery.'],
+            ['user', 'I want to revisit the copper moon observatory later.'],
+        ];
+        turns.forEach(([role, content], index) => memoryStore.captureTurn({
+            scopeId: 'review-chat',
+            role,
+            content,
+            captureKey: 'review-turn-' + index,
+        }));
+
+        const dream = new DreamingEngine(memoryStore).run({ scopeId: 'review-chat' });
+        expect(dream.candidatesCreated).toBeGreaterThan(0);
+        expect(dream.memoriesAccepted).toBe(0);
+        expect(dream.proposalsPending).toBeGreaterThan(0);
+        expect(memoryStore.listProposals({ status: 'pending' }).some(proposal => proposal.metadata.origin === 'dreaming')).toBe(true);
+        expect(memoryStore.searchMemories({ query: 'copper moon', scope: 'chat', activeChatId: 'review-chat' })).toHaveLength(0);
     });
 
     test('does not dream across chat scopes', async () => {

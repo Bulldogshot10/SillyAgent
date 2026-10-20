@@ -56,6 +56,41 @@ describe('agent tools API', () => {
         expect(body.tools.some(tool => tool.function.name === 'memory_propose')).toBe(true);
     });
 
+    test('defaults memory capture and dreaming to autonomous mode', async () => {
+        const settingsResponse = await fetch(baseUrl + '/memory/settings');
+        const settings = await settingsResponse.json();
+        expect(settings.settings.autoRetrieveEnabled).toBe(true);
+        expect(settings.settings.autoCaptureEnabled).toBe(true);
+        expect(settings.settings.autoDreamEnabled).toBe(true);
+        expect(settings.settings.requireApproval).toBe(false);
+
+        const proposalResponse = await postJson(baseUrl + '/execute', {
+            name: 'memory_propose',
+            arguments: {
+                content: 'The user prefers autonomous persistent memory.',
+                scope: 'user',
+                kind: 'preference',
+                importance: 4,
+            },
+        });
+        const proposed = await proposalResponse.json();
+        expect(proposalResponse.status).toBe(200);
+        expect(proposed.ok).toBe(true);
+        expect(proposed.result.requiresReview).toBe(false);
+        expect(proposed.result.proposal.status).toBe('approved');
+        expect(proposed.result.memory.content).toBe('The user prefers autonomous persistent memory.');
+
+        const pendingResponse = await fetch(baseUrl + '/memory/proposals');
+        expect((await pendingResponse.json()).proposals).toHaveLength(0);
+
+        const searchResponse = await postJson(baseUrl + '/execute', {
+            name: 'memory_search',
+            arguments: { query: 'autonomous persistent memory', scope: 'user' },
+        });
+        const searched = await searchResponse.json();
+        expect(searched.result.memories.some(memory => memory.content === 'The user prefers autonomous persistent memory.')).toBe(true);
+    });
+
     test('executes a valid built-in dice tool request', async () => {
         const response = await fetch(baseUrl + '/execute', {
             method: 'POST',
@@ -70,6 +105,7 @@ describe('agent tools API', () => {
     });
 
     test('proposes, reviews and retrieves a persisted memory', async () => {
+        await postJson(baseUrl + '/memory/settings', { requireApproval: true });
         const proposalResponse = await fetch(baseUrl + '/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -116,6 +152,7 @@ describe('agent tools API', () => {
     });
 
     test('bounds retrieved memory content before returning it to the model', async () => {
+        await postJson(baseUrl + '/memory/settings', { requireApproval: true });
         const content = 'boundedneedle ' + 'x'.repeat(3900);
         const proposalResponse = await fetch(baseUrl + '/execute', {
             method: 'POST',
@@ -189,12 +226,13 @@ describe('agent tools API', () => {
         const initialResponse = await fetch(baseUrl + '/memory/settings');
         const initial = await initialResponse.json();
         expect(initial.settings.autoRetrieveEnabled).toBe(true);
-        expect(initial.settings.autoCaptureEnabled).toBe(false);
+        expect(initial.settings.autoCaptureEnabled).toBe(true);
+        expect(initial.settings.autoDreamEnabled).toBe(true);
 
         const settingsResponse = await fetch(baseUrl + '/memory/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ autoCaptureEnabled: true, autoDreamEnabled: true }),
+            body: JSON.stringify({ autoCaptureEnabled: true, autoDreamEnabled: true, requireApproval: false }),
         });
         const settings = await settingsResponse.json();
         expect(settingsResponse.status).toBe(200);
@@ -243,6 +281,7 @@ describe('agent tools API', () => {
     });
 
     test('lists and deletes approved memories through the memory API', async () => {
+        await postJson(baseUrl + '/memory/settings', { requireApproval: true });
         const proposalResponse = await fetch(baseUrl + '/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

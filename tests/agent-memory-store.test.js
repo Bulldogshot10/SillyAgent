@@ -76,8 +76,35 @@ describe('MemoryStore', () => {
         }
     });
 
+    test('accepts durable memories immediately by default and makes them retrievable', async () => {
+        const store = await createMemoryStore();
+        expect(store.getSettings().requireApproval).toBe(false);
+
+        const memory = store.proposeMemory({
+            scope: 'user',
+            content: 'The user prefers autonomous memory with optional review.',
+            kind: 'preference',
+            importance: 4,
+        });
+
+        expect(memory.status).toBe('approved');
+        expect(memory.requiresReview).toBe(false);
+        expect(memory.memory.content).toBe('The user prefers autonomous memory with optional review.');
+        const duplicate = store.proposeMemory({
+            scope: 'user',
+            content: 'The user prefers autonomous memory with optional review.',
+            kind: 'preference',
+            importance: 4,
+        });
+        expect(duplicate.duplicate).toBe(true);
+        expect(store.listProposals({ status: 'pending' })).toHaveLength(0);
+        expect(store.searchMemories({ query: 'autonomous memory', scope: 'user' })).toHaveLength(1);
+        expect(store.getSummary()).toEqual({ events: 1, acceptedMemories: 1, pendingProposals: 0 });
+    });
+
     test('keeps proposals out of retrieval until approved', async () => {
         const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
         const proposal = store.proposeMemory({
             scope: 'user',
             content: 'The user prefers concise technical explanations.',
@@ -96,8 +123,25 @@ describe('MemoryStore', () => {
         expect(store.getSummary()).toEqual({ events: 1, acceptedMemories: 1, pendingProposals: 0 });
     });
 
+    test('auto-accepts older pending proposals when autonomous mode resumes', async () => {
+        const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
+        const pending = store.proposeMemory({
+            scope: 'user',
+            content: 'A pending idea should become retrievable when review is disabled.',
+            kind: 'fact',
+        });
+        expect(pending.status).toBe('pending');
+
+        store.updateSettings({ requireApproval: false });
+        expect(store.autoApprovePendingProposals()).toBe(1);
+        expect(store.listProposals({ status: 'pending' })).toHaveLength(0);
+        expect(store.searchMemories({ query: 'pending idea retrievable', scope: 'user' })).toHaveLength(1);
+    });
+
     test('rejects proposals and never indexes rejected content', async () => {
         const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
         const proposal = store.proposeMemory({
             scope: 'user',
             content: 'This is only a speculative detail.',
@@ -111,6 +155,7 @@ describe('MemoryStore', () => {
 
     test('limits character and chat search to the active scope', async () => {
         const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
         const character = store.proposeMemory({
             scope: 'character',
             scopeId: 'julia-card.png',
@@ -147,6 +192,7 @@ describe('MemoryStore', () => {
 
     test('deduplicates identical pending proposals', async () => {
         const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
         const first = store.proposeMemory({ scope: 'user', content: 'User likes green tea.' });
         const second = store.proposeMemory({ scope: 'user', content: 'User likes green tea.' });
 
@@ -160,6 +206,7 @@ describe('MemoryStore', () => {
         const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-memory-'));
         const databasePath = path.join(folder, 'memory.sqlite');
         const firstStore = await createMemoryStore(databasePath);
+        firstStore.updateSettings({ requireApproval: true });
         const proposal = firstStore.proposeMemory({
             scope: 'user',
             content: 'User is learning Japanese.',
@@ -188,6 +235,7 @@ describe('MemoryStore', () => {
 
     test('searches CJK memories by substring, including short queries', async () => {
         const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
         const proposal = store.proposeMemory({
             scope: 'user',
             content: '前に行った喫茶店は渋谷にある。',
@@ -208,10 +256,11 @@ describe('MemoryStore', () => {
         const store = await createMemoryStore();
         expect(store.getSettings()).toEqual({
             autoRetrieveEnabled: true,
-            autoCaptureEnabled: false,
-            autoDreamEnabled: false,
+            autoCaptureEnabled: true,
+            autoDreamEnabled: true,
+            requireApproval: false,
         });
-        store.updateSettings({ autoCaptureEnabled: true, autoDreamEnabled: true });
+        store.updateSettings({ autoCaptureEnabled: true, autoDreamEnabled: true, requireApproval: true });
         expect(store.getSettings().autoCaptureEnabled).toBe(true);
         expect(store.getSettings().autoDreamEnabled).toBe(true);
         expect(() => store.updateSettings({ autoCaptureEnabled: 'yes' })).toThrow(/must be a boolean/);
@@ -259,6 +308,7 @@ describe('MemoryStore', () => {
 
     test('lists and deletes accepted memories from both search indexes', async () => {
         const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
         const proposal = store.proposeMemory({ scope: 'user', content: 'The silver key is in a desk.' });
         const reviewed = store.reviewProposal(proposal.id, 'approve');
         expect(store.listMemories({ scope: 'user' })).toHaveLength(1);
@@ -270,6 +320,7 @@ describe('MemoryStore', () => {
 
     test('purges same-scope memory copies, proposals, and source events on deletion', async () => {
         const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
         const content = 'The user prefers jasmine tea.';
 
         const accepted = store.proposeMemory({
@@ -342,6 +393,7 @@ describe('MemoryStore', () => {
 
     test('hybrid ranking favors exact phrases and multi-term coverage', async () => {
         const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
         const partial = store.proposeMemory({
             scope: 'user',
             content: 'Silver details were written down, then the key was moved.',

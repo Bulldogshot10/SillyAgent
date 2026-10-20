@@ -92,7 +92,7 @@ export function registerBuiltinTools(registry = toolRegistry) {
     if (!registry.hasTool('memory_propose')) {
         registry.registerTool({
             name: 'memory_propose',
-            description: 'Propose a durable memory for user review. Proposals are not used for retrieval until approved.',
+            description: 'Store a durable memory from a useful fact, preference, goal, relationship, or event. Memories are saved and made retrievable immediately by default; if the owner enabled review, the proposal stays pending until approved.'
             toolset: 'memory',
             permission: 'write',
             timeoutMs: 2000,
@@ -115,8 +115,15 @@ export function registerBuiltinTools(registry = toolRegistry) {
                     kind: input.kind ?? 'fact',
                     content: input.content,
                     importance: input.importance ?? 3,
+                    requireApproval: context.requireMemoryApproval,
                 });
-                return { created: true, requiresReview: true, proposal };
+                return {
+                    created: !proposal.duplicate,
+                    duplicate: !!proposal.duplicate,
+                    requiresReview: proposal.requiresReview,
+                    memory: proposal.memory ?? null,
+                    proposal,
+                };
             },
         });
     }

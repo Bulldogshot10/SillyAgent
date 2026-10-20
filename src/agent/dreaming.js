@@ -44,7 +44,7 @@ export class DreamingEngine {
      * @param {object} options Scope and reflection bounds.
      * @returns {object} Dreaming report.
      */
-    run({ scope = 'chat', scopeId, limit = 100, minMentions = 3, maxProposals = 5 } = {}) {
+    run({ scope = 'chat', scopeId, limit = 100, minMentions = 3, maxProposals = 5, requireApproval } = {}) {
         if (scope !== 'chat') throw new TypeError('Dreaming v1 only supports the active chat scope.');
         if (typeof scopeId !== 'string' || !scopeId.trim()) throw new TypeError('Dreaming requires an active chat ID.');
         const eventLimit = Math.max(10, Math.min(200, Number.isInteger(limit) ? limit : 100));
@@ -95,6 +95,7 @@ export class DreamingEngine {
                 kind: 'event',
                 content,
                 importance: 2,
+                requireApproval,
                 metadata: {
                     origin: 'dreaming',
                     method: 'recurring-topic-v1',
@@ -113,14 +114,21 @@ export class DreamingEngine {
             metadata: { method: 'recurring-topic-v1', eventsReviewed: events.length, candidatesCreated: proposals.length },
         });
 
+        const memoriesAccepted = proposals.filter(proposal => proposal.status === 'approved').length;
+        const proposalsPending = proposals.filter(proposal => proposal.status === 'pending').length;
+
         return {
             scope: 'chat',
             eventsReviewed: events.length,
             candidatesCreated: proposals.length,
+            memoriesAccepted,
+            proposalsPending,
             topics: proposals.map(proposal => proposal.content),
             message: proposals.length
-                ? 'Recurring topics were proposed for review. Nothing was auto-approved.'
-                : 'No new recurring topics were strong enough to propose.',
+                ? proposalsPending
+                    ? memoriesAccepted + ' recurring-topic memories were saved automatically; ' + proposalsPending + ' proposal(s) await review.'
+                    : memoriesAccepted + ' recurring-topic memories were saved automatically.'
+                : 'No new recurring topics were strong enough to store.',
         };
     }
 }

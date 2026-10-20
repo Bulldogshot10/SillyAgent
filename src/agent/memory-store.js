@@ -272,11 +272,20 @@ export class MemoryStore {
     }
 
     /**
-     * Create a reviewable memory candidate. Proposals are not retrieved until approved.
+     * Persist a memory candidate. Default mode accepts it immediately; review mode stages it as pending.
      * @param {object} input Candidate fields.
      * @returns {object} Stored proposal.
      */
-    proposeMemory({ scope, scopeId, kind = 'fact', content, importance = 3, metadata, createdAt = Date.now() }) {
+    proposeMemory({
+        scope,
+        scopeId,
+        kind = 'fact',
+        content,
+        importance = 3,
+        metadata,
+        createdAt = Date.now(),
+        requireApproval,
+    }) {
         const target = normalizeScope(scope, scopeId);
         const text = normalizeText(content, MAX_CONTENT, 'Memory content');
         if (!KINDS.has(kind)) throw new TypeError('Unsupported memory kind.');
@@ -285,6 +294,8 @@ export class MemoryStore {
         }
         if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Memory timestamp must be a non-negative integer.');
         const metadataJson = serializeMetadata(metadata);
+        const approvalRequired = requireApproval === undefined ? this.getSettings().requireApproval : requireApproval;
+        if (typeof approvalRequired !== 'boolean') throw new TypeError('requireApproval must be a boolean.');
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
@@ -292,25 +303,70 @@ export class MemoryStore {
                 'SELECT * FROM memory_proposals WHERE status = \'pending\' AND scope = ? AND scope_id = ? AND kind = ? AND content = ? ORDER BY created_at DESC LIMIT 1',
             ).get(target.scope, target.scopeId, kind, text);
             if (duplicate) {
+                let memory = null;
+                let proposalRow = duplicate;
+                if (!approvalRequired) {
+                    const reviewedAt = Date.now();
+                    memory = this.#storeAcceptedMemory(duplicate, reviewedAt);
+                    this.#db.prepare('UPDATE memory_proposals SET status = \'approved\', reviewed_at = ? WHERE id = ?')
+                        .run(reviewedAt, duplicate.id);
+                    proposalRow = this.#db.prepare('SELECT * FROM memory_proposals WHERE id = ?').get(duplicate.id);
+                }
                 this.#db.exec('COMMIT;');
-                return { ...toProposal(duplicate), duplicate: true };
+                return {
+                    ...toProposal(proposalRow),
+                    memory,
+                    requiresReview: approvalRequired,
+                    duplicate: true,
+                };
             }
 
+            const acceptedProposal = this.#db.prepare(
+                'SELECT * FROM memory_proposals WHERE status = \'approved\' AND scope = ? AND scope_id = ? AND kind = ? AND content = ? ORDER BY created_at DESC LIMIT 1',
+            ).get(target.scope, target.scopeId, kind, text);
+            if (acceptedProposal) {
+                const memoryRow = this.#db.prepare(
+                    'SELECT * FROM memories WHERE scope = ? AND scope_id = ? AND kind = ? AND content = ?',
+                ).get(target.scope, target.scopeId, kind, text);
+                if (memoryRow) {
+                    this.#db.exec('COMMIT;');
+                    return {
+                        ...toProposal(acceptedProposal),
+                        memory: toMemory(memoryRow),
+                        requiresReview: false,
+                        duplicate: true,
+                    };
+                }
+            }
+
+            const proposalStatus = approvalRequired ? 'pending' : 'approved';
+            const reviewedAt = approvalRequired ? null : createdAt;
             const event = this.recordEvent({
                 scope: target.scope,
                 scopeId: target.scopeId,
                 eventType: 'memory.proposal_created',
                 content: text,
-                metadata: { kind, importance },
+                metadata: { kind, importance, status: proposalStatus, autoApproved: !approvalRequired },
                 createdAt,
             });
             const id = randomUUID();
             this.#db.prepare(
-                'INSERT INTO memory_proposals (id, scope, scope_id, kind, content, importance, source_event_id, status, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, \'pending\', ?, ?)',
-            ).run(id, target.scope, target.scopeId, kind, text, importance, event.id, metadataJson, createdAt);
-            const proposal = toProposal(this.#db.prepare('SELECT * FROM memory_proposals WHERE id = ?').get(id));
+                'INSERT INTO memory_proposals (id, scope, scope_id, kind, content, importance, source_event_id, status, metadata_json, created_at, reviewed_at) ' +
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            ).run(
+                id, target.scope, target.scopeId, kind, text, importance, event.id, proposalStatus,
+                metadataJson, createdAt, reviewedAt,
+            );
+            const proposalRow = this.#db.prepare('SELECT * FROM memory_proposals WHERE id = ?').get(id);
+            const memory = approvalRequired ? null : this.#storeAcceptedMemory(proposalRow, createdAt);
+            const proposal = toProposal(proposalRow);
             this.#db.exec('COMMIT;');
-            return { ...proposal, duplicate: false };
+            return {
+                ...proposal,
+                memory,
+                requiresReview: approvalRequired,
+                duplicate: false,
+            };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
             throw error;
@@ -318,7 +374,7 @@ export class MemoryStore {
     }
 
     /**
-     * Retrieve reviewable candidates.
+     * Retrieve pending, accepted, or rejected memory records.
      * @param {object} options Query options.
      * @returns {object[]} Proposals.
      */
@@ -353,32 +409,7 @@ export class MemoryStore {
             const reviewedAt = Date.now();
             let memory = null;
             if (decision === 'approve') {
-                const existing = this.#db.prepare(
-                    'SELECT id FROM memories WHERE scope = ? AND scope_id = ? AND kind = ? AND content = ?',
-                ).get(proposalRow.scope, proposalRow.scope_id, proposalRow.kind, proposalRow.content);
-                const memoryId = existing?.id ?? randomUUID();
-                this.#db.prepare(
-                    'INSERT INTO memories (id, scope, scope_id, kind, content, importance, source_event_id, metadata_json, created_at, updated_at) ' +
-                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ' +
-                    'ON CONFLICT(scope, scope_id, kind, content) DO UPDATE SET ' +
-                    'importance = MAX(memories.importance, excluded.importance), updated_at = excluded.updated_at',
-                ).run(
-                    memoryId, proposalRow.scope, proposalRow.scope_id, proposalRow.kind, proposalRow.content,
-                    proposalRow.importance, proposalRow.source_event_id, proposalRow.metadata_json,
-                    proposalRow.created_at, reviewedAt,
-                );
-                const memoryRow = this.#db.prepare(
-                    'SELECT * FROM memories WHERE scope = ? AND scope_id = ? AND kind = ? AND content = ?',
-                ).get(proposalRow.scope, proposalRow.scope_id, proposalRow.kind, proposalRow.content);
-                this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(memoryRow.id);
-                this.#db.prepare(
-                    'INSERT INTO memory_fts(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
-                ).run(memoryRow.id, memoryRow.scope, memoryRow.scope_id, memoryRow.content);
-                this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(memoryRow.id);
-                this.#db.prepare(
-                    'INSERT INTO memory_fts_trigram(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
-                ).run(memoryRow.id, memoryRow.scope, memoryRow.scope_id, memoryRow.content);
-                memory = toMemory(memoryRow);
+                memory = this.#storeAcceptedMemory(proposalRow, reviewedAt);
             }
 
             const status = decision === 'approve' ? 'approved' : 'rejected';
@@ -393,6 +424,24 @@ export class MemoryStore {
             this.#db.exec('ROLLBACK;');
             throw error;
         }
+    }
+
+    /**
+     * Automatically accept all currently pending proposals when autonomous mode is active.
+     * Called when an owner disables review, including when upgrading from the older review-only behavior.
+     * @returns {number} Number of proposals accepted.
+     */
+    autoApprovePendingProposals() {
+        let accepted = 0;
+        while (true) {
+            const pending = this.listProposals({ status: 'pending', limit: 100 });
+            if (!pending.length) break;
+            for (const proposal of pending) {
+                if (this.reviewProposal(proposal.id, 'approve')) accepted++;
+            }
+            if (pending.length < 100) break;
+        }
+        return accepted;
     }
 
     /**
@@ -540,8 +589,9 @@ export class MemoryStore {
     getSettings() {
         const settings = {
             autoRetrieveEnabled: true,
-            autoCaptureEnabled: false,
-            autoDreamEnabled: false,
+            autoCaptureEnabled: true,
+            autoDreamEnabled: true,
+            requireApproval: false,
         };
         const rows = this.#db.prepare('SELECT key, value FROM memory_settings').all();
         for (const row of rows) {
@@ -565,7 +615,7 @@ export class MemoryStore {
         if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
             throw new TypeError('Memory settings must be an object.');
         }
-        const allowed = new Set(['autoRetrieveEnabled', 'autoCaptureEnabled', 'autoDreamEnabled']);
+        const allowed = new Set(['autoRetrieveEnabled', 'autoCaptureEnabled', 'autoDreamEnabled', 'requireApproval']);
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
             for (const [key, value] of Object.entries(patch)) {

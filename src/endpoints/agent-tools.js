@@ -2,7 +2,6 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import express from 'express';
 
-import { getConfigValue } from '../util.js';
 import { MemoryStore } from '../agent/memory-store.js';
 import { SkillStore } from '../agent/skill-store.js';
 import { DreamingEngine } from '../agent/dreaming.js';
@@ -73,6 +72,16 @@ function getEffectiveSkillSettings(store) {
             ? settings.requireApproval
             : getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL', settings.requireApproval),
     };
+}
+
+function getEffectiveMemorySettings(store, { migratePending = false } = {}) {
+    const settings = store.getSettings();
+    const environmentOverride = process.env.SILLYTAVERN_AGENTTOOLS_MEMORYREQUIRESAPPROVAL;
+    const requireApproval = environmentOverride === undefined
+        ? settings.requireApproval
+        : getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_MEMORYREQUIRESAPPROVAL', settings.requireApproval);
+    if (migratePending && !requireApproval) store.autoApprovePendingProposals();
+    return { ...settings, requireApproval };
 }
 
 async function sendSkillError(response, error) {
@@ -309,7 +318,7 @@ router.post('/memory/proposals/:id/review', async (request, response) => {
 router.get('/memory/settings', async (request, response) => {
     try {
         const store = await getMemoryStore(request);
-        return response.json({ settings: store.getSettings() });
+        return response.json({ settings: getEffectiveMemorySettings(store, { migratePending: true }) });
     } catch (error) {
         return sendMemoryError(response, error);
     }
@@ -318,8 +327,8 @@ router.get('/memory/settings', async (request, response) => {
 router.post('/memory/settings', async (request, response) => {
     try {
         const store = await getMemoryStore(request);
-        const settings = store.updateSettings(request.body ?? {});
-        return response.json({ ok: true, settings });
+        store.updateSettings(request.body ?? {});
+        return response.json({ ok: true, settings: getEffectiveMemorySettings(store, { migratePending: true }) });
     } catch (error) {
         return response.status(400).json({
             ok: false,
@@ -435,7 +444,7 @@ router.post('/capture-turn', async (request, response) => {
 
     try {
         const store = await getMemoryStore(request);
-        const settings = store.getSettings();
+        const settings = getEffectiveMemorySettings(store);
         if (!settings.autoCaptureEnabled) return response.json({ captured: false, disabled: true });
         const captureKey = createHash('sha256')
             .update(activeChatId + '\0' + body.role + '\0' + body.messageKey + '\0' + body.content)
@@ -450,7 +459,7 @@ router.post('/capture-turn', async (request, response) => {
         const capturedCount = store.countCapturedTurns(activeChatId);
         let dreaming = null;
         if (!captured.duplicate && settings.autoDreamEnabled && capturedCount > 0 && capturedCount % 12 === 0) {
-            dreaming = new DreamingEngine(store).run({ scopeId: activeChatId });
+            dreaming = new DreamingEngine(store).run({ scopeId: activeChatId, requireApproval: settings.requireApproval });
         }
         return response.json({ captured: true, duplicate: captured.duplicate, capturedCount, dreaming });
     } catch (error) {
@@ -468,7 +477,8 @@ router.post('/dream', async (request, response) => {
     }
     try {
         const store = await getMemoryStore(request);
-        const result = new DreamingEngine(store).run({ scope: 'chat', scopeId: activeChatId });
+        const settings = getEffectiveMemorySettings(store);
+        const result = new DreamingEngine(store).run({ scope: 'chat', scopeId: activeChatId, requireApproval: settings.requireApproval });
         return response.json({ ok: true, ...result, summary: store.getSummary() });
     } catch (error) {
         return response.status(400).json({
@@ -521,7 +531,7 @@ router.post('/execute', async (request, response) => {
         }
     }
 
-    const memoryWritesEnabled = !!getConfigValue('agentTools.memoryProposalsEnabled', true, 'boolean');
+    const memoryWritesEnabled = getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED', true);
     const skillWritesEnabled = getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_SKILLWRITESENABLED', true);
     const allowedWriteToolsets = [];
     if (memoryWritesEnabled) allowedWriteToolsets.push('memory');
@@ -536,6 +546,7 @@ router.post('/execute', async (request, response) => {
             memoryStore,
             skillStore,
             requireSkillApproval: skillStore ? getEffectiveSkillSettings(skillStore).requireApproval : false,
+            requireMemoryApproval: memoryStore ? getEffectiveMemorySettings(memoryStore).requireApproval : false,
             activeChatId: getSafeContextId(body.activeChatId),
             activeCharacterId: getSafeContextId(body.activeCharacterId),
         },

@@ -13,8 +13,9 @@ import {
 const API_BASE = '/api/agent/tools';
 const DEFAULT_SETTINGS = {
     autoRetrieveEnabled: true,
-    autoCaptureEnabled: false,
-    autoDreamEnabled: false,
+    autoCaptureEnabled: true,
+    autoDreamEnabled: true,
+    requireApproval: false,
 };
 let settings = { ...DEFAULT_SETTINGS };
 let refreshInProgress = false;
