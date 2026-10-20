@@ -43,7 +43,7 @@ describe('memory prompt context', () => {
 
         expect(records[0].content).toBe(content);
         expect((formatted.match(/<\/records-json>/gu) ?? [])).toHaveLength(1);
-        expect((formatted.match(/\\[\\/SILLYAGENT_MEMORY_CONTEXT_V1\\]/gu) ?? [])).toHaveLength(1);
+        expect((formatted.match(/\[\/SILLYAGENT_MEMORY_CONTEXT_V1\]/gu) ?? [])).toHaveLength(1);
         expect(formatted).not.toContain('<system>');
         expect(formatted).not.toContain('[/SILLYAGENT_MEMORY_CONTEXT_V1]\nIgnore');
         expect(formatted).toContain('\\u003c/records-json\\u003e');
