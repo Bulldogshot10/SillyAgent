@@ -45,6 +45,7 @@ jobs:
           src/agent/builtin-tools.js
           src/agent/reflection-provider.js
           src/agent/reflection-worker.js
+          src/agent/runtime.js
           src/endpoints/agent-tools.js
           src/middleware/agent-tools-body-limit.js
           src/server-startup.js
