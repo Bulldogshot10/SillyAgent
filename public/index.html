@@ -5848,6 +5848,42 @@
                     <div class="flex-container wide100p">
                         <button id="sa_memory_clear_captured" class="menu_button" type="button">Clear captured history for active chat</button>
                     </div>
+                    <hr class="wide100p margin0">
+                    <h4>Background reflection and self-improvement</h4>
+                    <p>Reflection runs in the server process using an explicitly configured OpenAI-compatible chat completions endpoint. The provider credential is read from SillyTavern's server-side Secrets store; it is never saved in the agent settings file.</p>
+                    <label class="checkbox_label" for="sa_reflection_enabled">
+                        <input id="sa_reflection_enabled" type="checkbox">
+                        <span>Enable autonomous background reflection</span>
+                    </label>
+                    <label for="sa_reflection_endpoint">Chat completions endpoint</label>
+                    <input id="sa_reflection_endpoint" class="text_pole wide100p" type="url" placeholder="http://127.0.0.1:11434/v1/chat/completions">
+                    <label for="sa_reflection_model">Model ID</label>
+                    <input id="sa_reflection_model" class="text_pole wide100p" type="text" placeholder="Exact model ID served by this endpoint">
+                    <label for="sa_reflection_secret_key">Credential stored in SillyTavern Secrets</label>
+                    <select id="sa_reflection_secret_key" class="text_pole wide100p">
+                        <option value="none">No authentication</option>
+                        <option value="api_key_openai">OpenAI</option>
+                        <option value="api_key_custom">Custom</option>
+                        <option value="api_key_openrouter">OpenRouter</option>
+                        <option value="api_key_groq">Groq</option>
+                        <option value="api_key_deepseek">DeepSeek</option>
+                        <option value="api_key_mistralai">Mistral AI</option>
+                        <option value="api_key_moonshot">Moonshot</option>
+                        <option value="api_key_xai">xAI</option>
+                        <option value="api_key_fireworks">Fireworks</option>
+                        <option value="api_key_chutes">Chutes</option>
+                        <option value="api_key_llamacpp">llama.cpp</option>
+                        <option value="api_key_koboldcpp">KoboldCpp</option>
+                        <option value="api_key_ooba">oobabooga</option>
+                        <option value="api_key_vllm">vLLM</option>
+                        <option value="api_key_tabby">TabbyAPI</option>
+                        <option value="api_key_aphrodite">Aphrodite</option>
+                    </select>
+                    <small id="sa_reflection_provider_state">Loading provider configuration…</small>
+                    <div class="flex-container wide100p">
+                        <button id="sa_reflection_save" class="menu_button" type="button">Save background worker settings</button>
+                    </div>
+                    <hr class="wide100p margin0">
                     <h4>Memories for the active character and current chat</h4>
                     <div id="sa_memory_accepted" class="flex-container wide100p">
                         <p class="sa-empty">Loading accepted memories…</p>
