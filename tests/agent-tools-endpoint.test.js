@@ -112,8 +112,11 @@ describe('agent tools API', () => {
         expect(body.result.rolls).toHaveLength(2);
     });
 
-    test('proposes, reviews and retrieves a persisted memory', async () => {
-        await postJson(baseUrl + '/memory/settings', { requireApproval: true });
+    test('automatically accepts and retrieves memories despite legacy review settings', async () => {
+        const settingsResponse = await postJson(baseUrl + '/memory/settings', { requireApproval: true });
+        const settings = await settingsResponse.json();
+        expect(settings.settings.requireApproval).toBe(false);
+
         const proposalResponse = await fetch(baseUrl + '/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -121,7 +124,6 @@ describe('agent tools API', () => {
                 name: 'memory_propose',
                 arguments: {
                     content: 'The user prefers practical code examples.',
-                    scope: 'user',
                     kind: 'preference',
                     importance: 4,
                 },
@@ -130,21 +132,14 @@ describe('agent tools API', () => {
         const proposed = await proposalResponse.json();
         expect(proposalResponse.status).toBe(200);
         expect(proposed.ok).toBe(true);
-        expect(proposed.result.requiresReview).toBe(true);
+        expect(proposed.result.scope).toBe('user');
+        expect(proposed.result.requiresReview).toBe(false);
+        expect(proposed.result.proposal.status).toBe('approved');
+        expect(proposed.result.memory.content).toBe('The user prefers practical code examples.');
 
         const pendingResponse = await fetch(baseUrl + '/memory/proposals');
         const pending = await pendingResponse.json();
-        expect(pending.proposals).toHaveLength(1);
-        expect(pending.proposals[0].id).toBe(proposed.result.proposal.id);
-
-        const reviewResponse = await fetch(baseUrl + '/memory/proposals/' + proposed.result.proposal.id + '/review', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ decision: 'approve' }),
-        });
-        const reviewed = await reviewResponse.json();
-        expect(reviewResponse.status).toBe(200);
-        expect(reviewed.memory.content).toBe('The user prefers practical code examples.');
+        expect(pending.proposals).toHaveLength(0);
 
         const searchResponse = await fetch(baseUrl + '/execute', {
             method: 'POST',
@@ -172,13 +167,6 @@ describe('agent tools API', () => {
         });
         const proposed = await proposalResponse.json();
         expect(proposalResponse.status).toBe(200);
-
-        const reviewResponse = await fetch(baseUrl + '/memory/proposals/' + proposed.result.proposal.id + '/review', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ decision: 'approve' }),
-        });
-        expect(reviewResponse.status).toBe(200);
 
         const searchResponse = await fetch(baseUrl + '/execute', {
             method: 'POST',
@@ -230,28 +218,32 @@ describe('agent tools API', () => {
         });
         expect(response.status).toBe(400);
     });
-    test('manages opt-in settings and deduplicates captured chat turns', async () => {
+    test('enforces autonomous settings, deduplicates captures, and dreams automatically', async () => {
         const initialResponse = await fetch(baseUrl + '/memory/settings');
         const initial = await initialResponse.json();
         expect(initial.settings.autoRetrieveEnabled).toBe(true);
         expect(initial.settings.autoCaptureEnabled).toBe(true);
         expect(initial.settings.autoDreamEnabled).toBe(true);
+        expect(initial.settings.requireApproval).toBe(false);
 
         const settingsResponse = await fetch(baseUrl + '/memory/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ autoCaptureEnabled: true, autoDreamEnabled: true, requireApproval: false }),
+            body: JSON.stringify({ autoRetrieveEnabled: false, autoCaptureEnabled: false, autoDreamEnabled: false, requireApproval: true }),
         });
         const settings = await settingsResponse.json();
         expect(settingsResponse.status).toBe(200);
+        expect(settings.settings.autoRetrieveEnabled).toBe(true);
         expect(settings.settings.autoCaptureEnabled).toBe(true);
+        expect(settings.settings.autoDreamEnabled).toBe(true);
+        expect(settings.settings.requireApproval).toBe(false);
 
         const captureBody = {
             activeChatId: 'dream-test-chat',
             activeCharacterId: 'julia-card.png',
             role: 'user',
             content: 'We keep returning to the silver key mystery.',
-            messageKey: '12:user',
+            messageKey: '0:user',
         };
         const firstResponse = await fetch(baseUrl + '/capture-turn', {
             method: 'POST',
@@ -269,13 +261,35 @@ describe('agent tools API', () => {
         expect(first.duplicate).toBe(false);
         expect(duplicate.duplicate).toBe(true);
 
-        const dreamResponse = await fetch(baseUrl + '/dream', {
+        let finalCapture = first;
+        for (let index = 1; index < 12; index++) {
+            const role = index % 2 ? 'assistant' : 'user';
+            const response = await fetch(baseUrl + '/capture-turn', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...captureBody,
+                    role,
+                    content: 'The silver key mystery remains important in this conversation.',
+                    messageKey: String(index) + ':' + role,
+                }),
+            });
+            finalCapture = await response.json();
+            expect(response.status).toBe(200);
+            expect(finalCapture.captured).toBe(true);
+        }
+        expect(finalCapture.capturedCount).toBe(12);
+        expect(finalCapture.dreaming).not.toBeNull();
+        expect(finalCapture.dreaming.eventsReviewed).toBe(12);
+        expect(finalCapture.dreaming.candidatesCreated).toBeGreaterThan(0);
+        expect(finalCapture.dreaming.proposalsPending).toBe(0);
+
+        const manualDreamResponse = await fetch(baseUrl + '/dream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ activeChatId: 'dream-test-chat' }),
         });
-        expect(dreamResponse.status).toBe(200);
-        expect((await dreamResponse.json()).eventsReviewed).toBe(1);
+        expect(manualDreamResponse.status).toBe(404);
 
         const clearResponse = await fetch(baseUrl + '/memory/capture-history/clear', {
             method: 'POST',
@@ -284,32 +298,31 @@ describe('agent tools API', () => {
         });
         const cleared = await clearResponse.json();
         expect(clearResponse.status).toBe(200);
-        expect(cleared.clearedTurns).toBe(1);
+        expect(cleared.clearedTurns).toBe(12);
         expect(cleared.capturedTurnsRemaining).toBe(0);
     });
 
-    test('lists and deletes approved memories through the memory API', async () => {
+    test('automatically lists, retrieves, and deletes accepted memories across scopes', async () => {
         await postJson(baseUrl + '/memory/settings', { requireApproval: true });
         const proposalResponse = await fetch(baseUrl + '/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 name: 'memory_propose',
-                arguments: { content: 'A brass telescope belongs in the attic.', scope: 'user', kind: 'fact' },
+                arguments: { content: 'A brass telescope belongs in the attic.', kind: 'fact' },
             }),
         });
         const proposed = await proposalResponse.json();
-        const reviewResponse = await fetch(baseUrl + '/memory/proposals/' + proposed.result.proposal.id + '/review', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ decision: 'approve' }),
-        });
-        expect(reviewResponse.status).toBe(200);
+        expect(proposalResponse.status).toBe(200);
+        expect(proposed.result.requiresReview).toBe(false);
+        expect(proposed.result.scope).toBe('user');
+        expect(proposed.result.memory.content).toBe('A brass telescope belongs in the attic.');
 
-        const listResponse = await fetch(baseUrl + '/memory/list?scope=user');
+        const listResponse = await fetch(baseUrl + '/memory/list');
         const listed = await listResponse.json();
         const memory = listed.memories.find(item => item.content === 'A brass telescope belongs in the attic.');
         expect(memory).toBeDefined();
+        expect(memory.scope).toBe('user');
 
         const retrievalResponse = await fetch(baseUrl + '/retrieve-context', {
             method: 'POST',
