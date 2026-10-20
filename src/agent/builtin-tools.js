@@ -31,9 +31,37 @@ const MEMORY_PROPOSE_SCHEMA = {
         kind: { type: 'string', enum: ['fact', 'preference', 'event', 'relationship', 'goal', 'world_state'] },
         importance: { type: 'integer', minimum: 1, maximum: 5 },
     },
-    required: ['content', 'scope'],
+    required: ['content'],
     additionalProperties: false,
 };
+
+/**
+ * Infer a useful memory scope when the model omits it.
+ * The prompt still asks the model to choose a scope deliberately; this is a
+ * deterministic fallback so callers never need to choose one manually.
+ * @param {object} input Candidate memory fields.
+ * @param {object} context Active conversation identifiers.
+ * @returns {'user'|'character'|'chat'} Scope.
+ */
+function inferMemoryScope({ kind = 'fact', content = '' }, context = {}) {
+    const text = String(content).normalize('NFKC').toLocaleLowerCase();
+    const activeChatId = context.activeChatId;
+    const activeCharacterId = context.activeCharacterId;
+
+    if (['preference', 'goal'].includes(kind)) return 'user';
+    if (kind === 'relationship') return activeCharacterId ? 'character' : 'user';
+    if (kind === 'world_state') return activeCharacterId ? 'character' : (activeChatId ? 'chat' : 'user');
+
+    const characterSpecific = /\\b(character|persona|fictional|backstory|appearance|personality|outfit|roleplay)\\b/u.test(text);
+    if (characterSpecific && activeCharacterId) return 'character';
+
+    const transient = /\\b(this chat|this conversation|this session|current session|temporary|right now|currently debugging|current debugging|for this task)\\b/u.test(text);
+    if (transient && activeChatId) return 'chat';
+
+    // Facts and durable events default to user scope unless explicitly tied to a character
+    // or a transient session. The model can always specify another scope when appropriate.
+    return 'user';
+}
 
 /**
  * Register first-party tools used by roleplay. Safe to call more than once.
@@ -92,33 +120,37 @@ export function registerBuiltinTools(registry = toolRegistry) {
     if (!registry.hasTool('memory_propose')) {
         registry.registerTool({
             name: 'memory_propose',
-            description: 'Store a durable memory from a useful fact, preference, goal, relationship, or event. Memories are saved and made retrievable immediately by default; if the owner enabled review, the proposal stays pending until approved.',
+            description: 'Autonomously store a durable memory from a useful fact, preference, goal, relationship, or event. Call this proactively when the user reveals something worth remembering; do not wait for the user to ask. Choose scope automatically: user for durable user facts/preferences/goals, character for this character’s identity/backstory or character-specific relationship continuity, chat for temporary task/session context. Avoid duplicates, transient trivia, secrets, and credentials. Memories are saved and made retrievable immediately by default.',
             toolset: 'memory',
             permission: 'write',
             timeoutMs: 2000,
             inputSchema: MEMORY_PROPOSE_SCHEMA,
             execute: async ({ input, context }) => {
+                const kind = input.kind ?? 'fact';
+                const scope = input.scope ?? inferMemoryScope({ kind, content: input.content }, context);
                 let scopeId = '';
-                if (input.scope === 'chat') scopeId = context.activeChatId;
-                if (input.scope === 'character') scopeId = context.activeCharacterId;
+                if (scope === 'chat') scopeId = context.activeChatId;
+                if (scope === 'character') scopeId = context.activeCharacterId;
 
-                if (input.scope !== 'user' && (typeof scopeId !== 'string' || !scopeId)) {
+                if (scope !== 'user' && (typeof scopeId !== 'string' || !scopeId)) {
                     return {
                         created: false,
-                        message: 'There is no active chat or character for the requested memory scope.',
+                        scope,
+                        message: 'Automatic scope resolution selected a contextual scope, but no active context ID is available. Retry with user scope or wait for a chat/character context.',
                     };
                 }
 
                 const proposal = context.memoryStore.proposeMemory({
-                    scope: input.scope,
+                    scope,
                     scopeId,
-                    kind: input.kind ?? 'fact',
+                    kind,
                     content: input.content,
                     importance: input.importance ?? 3,
                     requireApproval: context.requireMemoryApproval,
                 });
                 return {
                     created: !proposal.duplicate,
+                    scope,
                     duplicate: !!proposal.duplicate,
                     requiresReview: proposal.requiresReview,
                     memory: proposal.memory ?? null,
