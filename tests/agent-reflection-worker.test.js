@@ -116,6 +116,102 @@ describe('server-owned reflection worker', () => {
         expect(skills.readSkill('rust-cli-import-recovery').source).toBe('self_improvement');
     });
 
+    test('supersedes a stale memory only with current same-scope evidence', async () => {
+        const oldProposal = store.proposeMemory({
+            scope: 'character',
+            scopeId: 'julia.png',
+            kind: 'goal',
+            content: 'The user is learning JavaScript for a file-management CLI.',
+            importance: 3,
+            metadata: { origin: 'test-fixture' },
+            requireApproval: false,
+        });
+        const events = await captureTurns();
+        globalThis.fetch = jest.fn(async (_url, options) => {
+            const request = JSON.parse(options.body);
+            const input = JSON.parse(request.messages[1].content);
+            expect(input.existingMemories.some(memory => memory.id === oldProposal.memory.id)).toBe(true);
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: JSON.stringify({
+                                memories: [{
+                                    content: 'The user is learning Rust to build a file-management CLI.',
+                                    kind: 'goal',
+                                    importance: 4,
+                                    scope: 'character',
+                                    evidenceIds: [events[0].id, events[2].id],
+                                    supersedesMemoryIds: [oldProposal.memory.id],
+                                    updateReason: 'The newer direct statement names Rust as the active language for this CLI.',
+                                }],
+                                skills: [],
+                            }),
+                        },
+                    }],
+                }),
+            };
+        });
+
+        await runReflectionWorkerOnce({ store, directories: { root }, getSkillStore: async () => skills });
+
+        const active = store.listMemories({ scope: 'character', scopeId: 'julia.png' });
+        expect(active.map(memory => memory.content)).toEqual([
+            'The user is learning Rust to build a file-management CLI.',
+        ]);
+        const supersession = store.listEvents({
+            scope: 'character',
+            scopeId: 'julia.png',
+            eventTypes: ['memory.superseded'],
+            limit: 10,
+        });
+        expect(supersession).toHaveLength(1);
+        expect(supersession[0].metadata.previousMemoryId).toBe(oldProposal.memory.id);
+        expect(supersession[0].metadata.evidenceEventIds).toEqual([events[0].id, events[2].id]);
+    });
+
+    test('dreaming never sends another character\'s turns to the reflection model', async () => {
+        const a = store.captureTurn({
+            scopeId: 'julia-chat',
+            role: 'user',
+            content: 'CHARACTER_A_PRIVATE memory: the silver key belongs to Julia.',
+            captureKey: 'a-user',
+            metadata: { characterId: 'julia.png', role: 'user' },
+        }).event;
+        store.captureTurn({
+            scopeId: 'bella-chat',
+            role: 'user',
+            content: 'CHARACTER_B_PRIVATE memory: the silver key belongs to Bella.',
+            captureKey: 'b-user',
+            metadata: { characterId: 'bella.png', role: 'user' },
+        });
+        store.enqueueReflectionJob({
+            scopeId: 'julia-chat',
+            chatId: 'julia-chat.jsonl',
+            characterId: 'julia.png',
+            mode: 'dream',
+            triggerEventId: a.id,
+            triggerCount: 1,
+        });
+        globalThis.fetch = jest.fn(async (_url, options) => {
+            const request = JSON.parse(options.body);
+            const input = JSON.parse(request.messages[1].content);
+            const transcript = JSON.stringify(input.transcript);
+            expect(transcript).toContain('CHARACTER_A_PRIVATE');
+            expect(transcript).not.toContain('CHARACTER_B_PRIVATE');
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({ choices: [{ message: { content: '{"memories":[],"skills":[]}' } }] }),
+            };
+        });
+
+        await runReflectionWorkerOnce({ store, directories: { root }, getSkillStore: async () => skills });
+        expect(store.listReflectionJobs({ status: 'completed' })).toHaveLength(1);
+    });
+
     test('leaves a failed provider attempt pending for durable retry', async () => {
         await captureTurns();
         globalThis.fetch = jest.fn(async () => ({
@@ -136,4 +232,24 @@ describe('server-owned reflection worker', () => {
         expect(pending[0].lastError).toContain('HTTP 503');
         expect(pending[0].lastError).not.toContain('private upstream detail');
     });
+
+describe('reflection provider configuration', () => {
+    test('never persists an API secret and rejects embedded URL credentials', async () => {
+        saveReflectionProviderConfig(root, {
+            enabled: false,
+            endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
+            model: 'local-fixture',
+            secretKey: 'none',
+            apiKey: 'must-never-be-saved',
+        });
+        const raw = await fs.readFile(path.join(root, 'sillyagent', 'reflection-provider.json'), 'utf8');
+        expect(raw).not.toContain('must-never-be-saved');
+        expect(() => saveReflectionProviderConfig(root, {
+            enabled: true,
+            endpoint: 'https://user:password@example.com/v1/chat/completions',
+            model: 'remote-fixture',
+            secretKey: 'api_key_openai',
+        })).toThrow(/must use HTTP or HTTPS and must not include embedded credentials/u);
+    });
+});
 });
