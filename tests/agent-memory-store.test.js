@@ -574,6 +574,12 @@ describe('MemoryStore', () => {
             stores = stores.filter(store => store !== firstStore);
             reopened = await createMemoryStore(databasePath);
             expect(reopened.listReflectionJobs({ status: 'pending' })).toHaveLength(1);
+            expect(reopened.getReflectionJobSummary()).toEqual({
+                pending: 1,
+                running: 0,
+                completed: 0,
+                failed: 0,
+            });
             expect(reopened.claimReflectionJob({
                 scopeId: 'character-chat-b',
                 characterId: 'char-b.png',
