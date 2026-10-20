@@ -2,9 +2,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import express from 'express';
 
-import { MemoryStore } from '../agent/memory-store.js';
-import { SkillStore } from '../agent/skill-store.js';
-import { startReflectionWorker } from '../agent/reflection-worker.js';
+import { getAgentMemoryStore, getAgentSkillStore } from '../agent/runtime.js';
 import { getReflectionProviderState, saveReflectionProviderConfig } from '../agent/reflection-provider.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
 import { registerSkillTools } from '../agent/skill-tools.js';
@@ -16,8 +14,6 @@ registerSkillTools();
 export const router = express.Router();
 
 const MAX_REQUEST_BYTES = 16 * 1024;
-const memoryStores = new Map();
-const skillStores = new Map();
 
 function getSafeContextId(value) {
     return typeof value === 'string' && value.trim().length > 0 && value.length <= 256
@@ -48,39 +44,14 @@ function getEnvironmentBoolean(name, fallback) {
 
 async function getMemoryStore(request) {
     const root = request.user?.directories?.root ?? globalThis.DATA_ROOT;
-    if (typeof root !== 'string' || !root) throw new Error('Could not determine the current user data directory.');
-
-    const directory = path.join(root, 'sillyagent');
-    const databasePath = path.join(directory, 'memory.sqlite');
-
-    if (!memoryStores.has(databasePath)) {
-        const opening = MemoryStore.open(databasePath);
-        memoryStores.set(databasePath, opening);
-        opening.catch(() => memoryStores.delete(databasePath));
-    }
-    const store = await memoryStores.get(databasePath);
     const directories = request.user?.directories ?? { root };
-    startReflectionWorker({
-        store,
-        directories,
-        getSkillStore: () => getSkillStore({ user: { directories } }),
-    });
-    return store;
+    return await getAgentMemoryStore(directories);
 }
 
 async function getSkillStore(request) {
     const root = request.user?.directories?.root ?? globalThis.DATA_ROOT;
-    if (typeof root !== 'string' || !root) throw new Error('Could not determine the current user data directory.');
-
-    const directory = path.join(root, 'sillyagent');
-    const databasePath = path.join(directory, 'skills.sqlite');
-
-    if (!skillStores.has(databasePath)) {
-        const opening = SkillStore.open(databasePath);
-        skillStores.set(databasePath, opening);
-        opening.catch(() => skillStores.delete(databasePath));
-    }
-    return await skillStores.get(databasePath);
+    const directories = request.user?.directories ?? { root };
+    return await getAgentSkillStore(directories);
 }
 
 function getEffectiveSkillSettings(store) {
