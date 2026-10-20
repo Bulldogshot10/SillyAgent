@@ -564,6 +564,22 @@ router.post('/memory/reflection-context', async (request, response) => {
             ? store.listMemories({ scope: 'character', scopeId: activeCharacterId, limit: 50 })
             : [];
         const chatMemories = store.listMemories({ scope: 'chat', scopeId: scopedChatId, limit: 20 });
+        let activeSkills = [];
+        try {
+            const skillStore = await getSkillStore(request);
+            activeSkills = skillStore.listSkills({ limit: 15 }).map(skill => {
+                const revision = skillStore.readSkill(skill.slug);
+                return revision ? {
+                    slug: revision.slug,
+                    version: revision.version,
+                    name: revision.name,
+                    description: revision.description,
+                    content: revision.content,
+                } : skill;
+            });
+        } catch (error) {
+            console.debug('[SillyAgent reflection] Active skill catalog unavailable:', error);
+        }
 
         return response.json({
             turns,
@@ -574,6 +590,7 @@ router.post('/memory/reflection-context', async (request, response) => {
                 content: memory.content,
                 importance: memory.importance,
             })),
+            skills: activeSkills,
             activeCharacterId,
             activeChatId: scopedChatId,
         });
