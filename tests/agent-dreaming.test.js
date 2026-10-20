@@ -89,6 +89,29 @@ describe('DreamingEngine', () => {
             && memory.content.includes('silver key'))).toBe(true);
     });
 
+
+    test('automatically uses user scope when a topic recurs across different characters', async () => {
+        const memoryStore = await createStore();
+        const turns = [
+            { chatId: 'julia-chat', characterId: 'julia.png', content: 'We keep discussing the silver key mystery.' },
+            { chatId: 'bella-chat', characterId: 'bella.png', content: 'The silver key mystery still needs to be solved.' },
+            { chatId: 'alex-chat', characterId: 'alex.png', content: 'Let us document the silver key mystery carefully.' },
+        ];
+        turns.forEach((turn, index) => memoryStore.captureTurn({
+            scopeId: turn.chatId,
+            role: 'user',
+            content: turn.content,
+            captureKey: 'user-cross-chat-' + index,
+            metadata: { characterId: turn.characterId },
+        }));
+
+        const dream = new DreamingEngine(memoryStore).run({ scopeId: 'alex-chat' });
+        const memories = memoryStore.listMemories({ scope: 'all' });
+        expect(dream.globalEventsReviewed).toBe(3);
+        expect(memories.some(memory => memory.scope === 'user'
+            && memory.content.includes('silver key'))).toBe(true);
+    });
+
     test('does not dream across chat scopes', async () => {
         const memoryStore = await createStore();
         memoryStore.captureTurn({
