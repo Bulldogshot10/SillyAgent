@@ -72,7 +72,7 @@ export class DreamingEngine {
      * @param {object} options Scope and reflection bounds.
      * @returns {object} Dreaming report.
      */
-    run({ scope = 'chat', scopeId, activeCharacterId = null, limit = 100, minMentions = 3, maxProposals = 5, requireApproval = false } = {}) {
+    run({ scope = 'chat', scopeId, activeCharacterId = null, limit = 100, minMentions = 3, maxProposals = 5, requireApproval } = {}) {
         if (scope !== 'chat') throw new TypeError('Dreaming is triggered from an active chat.');
         if (typeof scopeId !== 'string' || !scopeId.trim()) throw new TypeError('Dreaming requires an active chat ID.');
 
