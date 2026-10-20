@@ -137,12 +137,13 @@ describe('agent-managed skills API', () => {
     });
 
     test('auto-activates evidence-backed revisions despite legacy approval settings', async () => {
-        const settingsResponse = await postJson(baseUrl + '/skills/settings', { requireApproval: true });
+        const settingsResponse = await postJson(baseUrl + '/skills/settings', { requireApproval: true, activeCharacterId: 'julia-card.png' });
         expect(settingsResponse.status).toBe(200);
         expect((await settingsResponse.json()).settings.requireApproval).toBe(false);
 
         const proposedResponse = await postJson(baseUrl + '/execute', {
             name: 'skill_propose',
+            activeCharacterId: 'julia-card.png',
             arguments: {
                 slug: 'agentic-skill-lifecycle',
                 name: 'Agentic Skill Lifecycle',
@@ -175,7 +176,7 @@ describe('agent-managed skills API', () => {
         expect(history.revisions.map(revision => revision.version)).toEqual([2, 1]);
         expect(history.revisions.every(item => item.checksum)).toBe(true);
 
-        const resetResponse = await postJson(baseUrl + '/skills/settings', { requireApproval: false });
+        const resetResponse = await postJson(baseUrl + '/skills/settings', { requireApproval: false, activeCharacterId: 'julia-card.png' });
         expect((await resetResponse.json()).settings.requireApproval).toBe(false);
     });
 
@@ -189,6 +190,7 @@ describe('agent-managed skills API', () => {
         process.env[skillWritesEnvKey] = 'false';
         const denied = await postJson(baseUrl + '/execute', {
             name: 'skill_propose',
+            activeCharacterId: 'julia-card.png',
             arguments: {
                 name: 'Disabled Skill',
                 description: 'A skill that should not be written when the feature is disabled.',
