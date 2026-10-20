@@ -5830,6 +5830,31 @@
                 </div>
             </div>
         </div>
+        <div id="sillyagent-agent-button" class="drawer">
+            <div class="drawer-toggle">
+                <div class="drawer-icon fa-solid fa-brain fa-fw closedIcon" title="SillyAgent Agent Core" aria-label="SillyAgent Agent Core"></div>
+            </div>
+            <div id="SillyAgentAgentCore" class="drawer-content closedDrawer">
+                <div class="flex-container wide100p">
+                    <div class="flex-container wide100p alignitemscenter">
+                        <h3 class="margin0 flex1">SillyAgent Agent Core</h3>
+                        <button id="sa_memory_refresh" class="menu_button" type="button">Refresh state</button>
+                    </div>
+                    <p>Native agent runtime: persistent character-scoped memory, automatic retrieval, and a durable reflection queue.</p>
+                    <small id="sa_memory_summary">Loading memory and worker state…</small>
+                    <div id="sillyagent_memory_status" role="status" aria-live="polite"></div>
+                    <label for="sa_memory_search">Filter accepted memories</label>
+                    <input id="sa_memory_search" class="text_pole wide100p" type="search" placeholder="Search memory content or scope">
+                    <div class="flex-container wide100p">
+                        <button id="sa_memory_clear_captured" class="menu_button" type="button">Clear captured history for active chat</button>
+                    </div>
+                    <h4>Memories for the active character and current chat</h4>
+                    <div id="sa_memory_accepted" class="flex-container wide100p">
+                        <p class="sa-empty">Loading accepted memories…</p>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div id="persona-management-button" class="drawer">
             <div class="drawer-toggle">
                 <div class="drawer-icon fa-solid fa-face-smile fa-fw closedIcon" title="Persona Management" data-i18n="[title]Persona Management"></div>
