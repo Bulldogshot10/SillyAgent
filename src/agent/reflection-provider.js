@@ -60,8 +60,11 @@ function validateConfig(input) {
         } catch {
             throw new TypeError('Reflection endpoint must be a complete URL ending at an OpenAI-compatible chat completions endpoint.');
         }
-        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash) {
-            throw new TypeError('Reflection endpoint must use HTTP or HTTPS and must not include embedded credentials or a fragment.');
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash || parsed.search) {
+            throw new TypeError('Reflection endpoint must use HTTP or HTTPS and must not include embedded credentials, query parameters, or a fragment.');
+        }
+        if (!/\/chat\/completions\/?$/iu.test(parsed.pathname)) {
+            throw new TypeError('Reflection endpoint path must end in /chat/completions.');
         }
     }
     if (enabled && (!endpoint || !model)) {
