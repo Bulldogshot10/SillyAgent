@@ -73,6 +73,7 @@ describe('agent tools API', () => {
         expect(settings.settings.requireApproval).toBe(false);
 
         const proposalResponse = await postJson(baseUrl + '/execute', {
+            activeCharacterId: 'julia-card.png',
             name: 'memory_propose',
             arguments: {
                 content: 'The user prefers autonomous persistent memory.',
