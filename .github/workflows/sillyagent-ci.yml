@@ -47,7 +47,6 @@ jobs:
           src/middleware/agent-tools-body-limit.js
           src/server-startup.js
           public/scripts/tool-calling.js
-          public/scripts/line-chat-ui.js
           public/scripts/extensions/sillyagent-memory/index.js
           public/scripts/extensions/sillyagent-memory/memory-context.js
 
