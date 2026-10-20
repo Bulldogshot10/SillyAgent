@@ -43,15 +43,18 @@ jobs:
           src/agent/skill-tools.js
           src/agent/memory-store.js
           src/agent/builtin-tools.js
+          src/agent/reflection-provider.js
+          src/agent/reflection-worker.js
           src/endpoints/agent-tools.js
           src/middleware/agent-tools-body-limit.js
           src/server-startup.js
+          src/server-main.js
           public/scripts/tool-calling.js
-          public/scripts/extensions/sillyagent-memory/index.js
-          public/scripts/extensions/sillyagent-memory/memory-context.js
+          public/scripts/sillyagent-memory.js
+          public/scripts/sillyagent-memory-context.js
 
       - name: Lint test files
-        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js agent-tools-body-limit.test.js agent-skill-store.test.js agent-skill-endpoint.test.js
+        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js agent-tools-body-limit.test.js agent-skill-store.test.js agent-skill-endpoint.test.js agent-reflection-worker.test.js
         working-directory: tests
 
       - name: Run unit tests
