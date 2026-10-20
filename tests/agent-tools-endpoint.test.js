@@ -329,7 +329,7 @@ describe('agent tools API', () => {
         const clearResponse = await fetch(baseUrl + '/memory/capture-history/clear', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ activeChatId: 'dream-test-chat' }),
+            body: JSON.stringify({ activeChatId: 'dream-test-chat', activeCharacterId: 'julia-card.png' }),
         });
         const cleared = await clearResponse.json();
         expect(clearResponse.status).toBe(200);
