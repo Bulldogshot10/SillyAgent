@@ -28,7 +28,7 @@ export async function getAgentMemoryStore(input) {
     if (!workerHandles.has(databasePath)) {
         const starting = startReflectionWorker({
             store,
-            directories,
+            directories: { ...directories, root },
             getSkillStore: () => getAgentSkillStore(directories),
         });
         workerHandles.set(databasePath, starting);
@@ -51,7 +51,7 @@ export async function getAgentSkillStore(input) {
  * Initialize the default data root's native agent worker when the server boots.
  * Other configured user roots are initialized lazily through authenticated APIs.
  * @param {string} root Default data root.
- * @returns {Promise<import('./reflection-worker.js').startReflectionWorker>} Not a public worker API.
+ * @returns {Promise<import('./memory-store.js').MemoryStore>} Initialized default memory store.
  */
 export async function initializeAgentRuntime(root) {
     return await getAgentMemoryStore(root);
