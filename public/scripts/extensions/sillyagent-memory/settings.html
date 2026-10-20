@@ -5,46 +5,17 @@
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
         </div>
         <div class="inline-drawer-content">
-            <p class="sa-memory-intro">Manage autonomous memory, optional human review, and dreaming for the active chat.</p>
-            <label class="checkbox_label" for="sa_autoRetrieveEnabled">
-                <input id="sa_autoRetrieveEnabled" type="checkbox" checked />
-                <span>Automatic retrieval</span>
-            </label>
-            <small>Inject up to 3 approved memories relevant to the current prompt.</small>
-            <label class="checkbox_label" for="sa_autoCaptureEnabled">
-                <input id="sa_autoCaptureEnabled" type="checkbox" checked />
-                <span>Automatic chat capture</span>
-            </label>
-            <small>Store user and assistant turns as chat-scoped events so dreaming can consolidate recurring topics automatically.</small>
-            <label class="checkbox_label" for="sa_autoDreamEnabled">
-                <input id="sa_autoDreamEnabled" type="checkbox" checked />
-                <span>Automatic dreaming</span>
-            </label>
-            <small>When capture is enabled, look for recurring topics every 12 captured turns and save useful memories automatically unless review is enabled.</small>
-            <label class="checkbox_label" for="sa_requireApproval">
-                <input id="sa_requireApproval" type="checkbox" />
-                <span>Require human review for new memories (optional)</span>
-            </label>
-            <small>Off by default. Turn this on to keep new memory proposals out of retrieval until you approve them.</small>
-            <small>Clearing captured history removes raw turn events from the active chat, but intentionally preserves accepted memories and existing proposals.</small>
+            <p class="sa-memory-intro">Autonomous memory is always on. SillyAgent captures chat turns, retrieves relevant memories, runs dreaming automatically, and enables native tool calling for supported Chat Completion providers.</p>
+            <small>The agent chooses the scope automatically: user memory for durable user facts and preferences, character memory for character identity and continuity, and chat memory for temporary conversation context. No manual scope selection or dreaming trigger is needed.</small>
             <div class="sa-memory-toolbar">
                 <button id="sa_memory_refresh" class="menu_button" type="button">Refresh memory</button>
-                <button id="sa_memory_dream" class="menu_button" type="button">Dream current chat</button>
                 <button id="sa_memory_clear_captured" class="menu_button" type="button">Clear captured history</button>
             </div>
             <small id="sa_memory_summary" class="sa-memory-summary">Loading memory summary…</small>
             <div id="sillyagent_memory_status" role="status" aria-live="polite"></div>
-            <label for="sa_memory_search">Filter current list</label>
-            <input id="sa_memory_search" class="text_pole" type="search" placeholder="Search proposals or memories" />
-            <h4>Pending proposals</h4>
-            <div id="sa_memory_proposals" class="sa-memory-list"><p class="sa-empty">Loading proposals…</p></div>
-            <h4>Accepted memories</h4>
-            <label for="sa_memory_scope">Scope</label>
-            <select id="sa_memory_scope" class="text_pole">
-                <option value="user">User memory</option>
-                <option value="chat">Current chat</option>
-                <option value="character">Current character</option>
-            </select>
+            <label for="sa_memory_search">Filter memories</label>
+            <input id="sa_memory_search" class="text_pole" type="search" placeholder="Search memory content or scope" />
+            <h4>Accepted memories across all scopes</h4>
             <div id="sa_memory_accepted" class="sa-memory-list"><p class="sa-empty">Loading memories…</p></div>
         </div>
     </div>
