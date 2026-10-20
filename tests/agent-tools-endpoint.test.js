@@ -316,10 +316,12 @@ describe('agent tools API', () => {
             expect(finalCapture.captured).toBe(true);
         }
         expect(finalCapture.capturedCount).toBe(12);
-        expect(finalCapture.dreaming).not.toBeNull();
-        expect(finalCapture.dreaming.eventsReviewed).toBe(12);
-        expect(finalCapture.dreaming.candidatesCreated).toBeGreaterThan(0);
-        expect(finalCapture.dreaming.proposalsPending).toBe(0);
+        expect(finalCapture.queuedReflection.created).toBe(true);
+        expect(finalCapture.queuedReflection.job.mode).toBe('dream');
+        expect(finalCapture.queuedReflection.job.status).toBe('pending');
+        const queueStatusResponse = await fetch(baseUrl + '/memory/reflection-jobs/status');
+        const queueStatus = await queueStatusResponse.json();
+        expect(queueStatus.jobs.pending).toBeGreaterThan(0);
 
         const manualDreamResponse = await fetch(baseUrl + '/dream', {
             method: 'POST',
