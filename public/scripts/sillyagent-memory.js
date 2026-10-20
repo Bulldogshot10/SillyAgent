@@ -134,7 +134,7 @@ async function captureTurn(runtime, messageIndex, role, messageType = '') {
         });
         // The capture endpoint wakes the backend worker. Refresh only when the
         // native panel is visible; background capture never depends on this UI.
-        if (document.getElementById('sillyagent_memory_settings')?.offsetParent) {
+        if (document.getElementById('SillyAgentAgentCore')?.offsetParent) {
             void refreshPanel(runtime);
         }
     } catch (error) {
@@ -205,7 +205,7 @@ async function refreshPanel(runtime) {
         const summary = proposalResponse.summary || {};
         const payloads = [];
         if (ids.activeCharacterId) {
-            const params = new URLSearchParams({ scope: 'character', scopeId: ids.activeCharacterId, limit: '100' });
+            const params = new URLSearchParams({ scope: 'character', scopeId: ids.activeCharacterId, activeCharacterId: ids.activeCharacterId, limit: '100' });
             payloads.push(requestApi(runtime, '/memory/list?' + params.toString()));
         }
         if (ids.activeChatId) {
