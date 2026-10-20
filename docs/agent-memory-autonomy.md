@@ -1,32 +1,35 @@
-# Autonomous persistent memory and dreaming
+# Native autonomous memory and reflection
 
-SillyAgent's memory loop is autonomous by default. Each SillyTavern user has a persistent SQLite store at `data/sillyagent/memory.sqlite`.
+SillyAgent's memory system is a first-party fork feature. The capture and retrieval hooks are initialized from `public/script.js`; the settings drawer is part of `public/index.html`; storage, the job queue, reflection provider, and worker run in the Node server. There is no SillyAgent memory extension manifest or extension-loader dependency.
 
-## Automatic lifecycle
+## Scope and isolation
 
-- Every user and assistant turn is captured automatically into a durable SQLite event log.
-- The backend queues a reflection job after every four captured turns. Every third batch is a deeper dreaming pass; ordinary batches perform low-cost extraction. Queue rows, attempts, leases, completion, and failures persist in SQLite.
-- The SillyTavern extension drains the queue in the background using the currently configured model's quiet-generation API. It does not depend on a user saying "remember this" or on the model voluntarily calling a memory tool. If a provider request fails, the job is retried with backoff up to three attempts. Pending jobs survive a browser or backend restart and are drained when the extension next becomes active.
-- Routine extraction reviews the latest turns of the job's chat. Dreaming reviews a bounded set of captured turns from the same active character across chats, synthesizing durable patterns rather than simply storing repeated keywords.
-- The model returns structured JSON candidates; the extension validates the shape, bounds candidate counts and lengths, skips exact duplicates, rejects obvious credential patterns, and then submits accepted writes through the same scoped memory-store API used by the tool harness.
-- Relevant accepted memories are retrieved and injected before a response. Native tool calling is enabled for supported Chat Completion providers, but autonomous extraction and dreaming do not rely on the model choosing to call a memory tool during the user-facing reply.
-- The model does not select a global user scope. Durable user facts/preferences/goals and character identity/backstory/relationship continuity live inside the active character partition; temporary task/session context may live in the current chat. Different characters' evidence is filtered before reflection.
+Each SillyTavern data root has its own SQLite files under `sillyagent/`: `memory.sqlite` and `skills.sqlite`. Persistent memory candidates are restricted to the active character or the exact active chat. Chat IDs are namespaced with the character ID when one is selected. Relevant retrieval searches only the current chat and active character, and long-horizon dreaming filters captured evidence to the active character. The agent tools map legacy `user` scope requests into the active character or chat; the automatic reflection worker never writes a global user memory.
 
-The panel reports accepted memories, pending proposals, captured events, and reflection queue state. Refresh only reloads the display; it does not enqueue or execute work. The UI does not expose a manual dreaming button, a scope picker, or ordinary-memory approval actions.
+Older installations may contain legacy global-user records. The migration moves a record into a character partition only when stored provenance or nearby captured turns identify one owner. Ambiguous records remain quarantined in legacy scope and are excluded from automatic retrieval. They are never cloned across characters.
 
-Captured raw turns and accepted memories remain separate. Clearing captured history removes only captured user/assistant turn events for the active chat; it keeps accepted memories. The older deterministic topic detector remains available as a testable engine, but the production auto-consolidation path uses model-generated reflection candidates. The harness currently uses the browser-side SillyTavern provider API to perform inference; while the browser is unavailable, durable jobs wait in SQLite and resume when the extension comes back. A fully headless Node-side inference worker would need an explicit server-side provider adapter and secure provider-credential handling, and is not claimed by this implementation slice.
+## Capture, queue, and background work
 
+Core message lifecycle events capture user and assistant turns as bounded, deduplicated evidence events. Captured raw turns are not memories by themselves. After each four new captured turns, the backend creates a durable extraction job; every twelfth turn creates the long-horizon dreaming job. Queue rows, claim tokens, leases, retries, completion, and failures live in SQLite.
 
-## Legacy memory migration
+The worker starts with the server process for the default data root and starts lazily for any additional user data root when its native API is accessed. It keeps polling without a browser tab, and abandoned work becomes claimable again after its lease expires. If the server process itself is stopped, no code can execute while it is stopped; pending jobs remain persisted and resume when that server starts again.
 
-Opening an existing SQLite store automatically migrates old global `user` memories into character partitions. The migrator first uses saved character metadata, then correlates the original memory write timestamp with captured chat turns. If the database only identifies one character, it assigns the legacy record to that character. Matching memories are merged without duplication and the full-text indexes are refreshed.
+Configure the background provider once in the native SillyAgent Agent Core panel. The worker calls an explicitly configured OpenAI-compatible `/chat/completions` endpoint and loads the selected credential from SillyTavern's server-side Secrets store. Only the endpoint, model ID, and secret-key identifier are persisted in `reflection-provider.json`; API key values are not stored in the agent config or queued jobs. Background reflection is disabled until a valid endpoint and model have been configured.
 
-If a legacy memory has no reliable character provenance, it remains marked as unresolved legacy data and is excluded from every automatic retrieval path. The migrator does not clone uncertain memories into every character or guess an owner, because either choice can leak one character's history into another. It retries on subsequent store opens, so importing matching chat history later can make additional records migratable. No manual migration trigger is required.
+## Dreaming-inspired synthesis and self-improvement
 
-## Provider compatibility
+Routine reflection reviews a bounded recent window from one chat. Dreaming reviews a larger chronological window from chats belonging to the same character. Both ask the configured model for structured candidates with evidence event IDs. Candidate counts, field lengths, scope, event provenance, duplicates, credential-like strings, and memory-kind values are checked before persistence. Invalid model output is treated as a failed job, not as an empty success. A no-op is valid when the conversation does not support durable changes.
 
-Automatic native function calling applies when SillyTavern is using Chat Completion with a provider/model supported by its ToolManager, including Google AI Studio/MakerSuite and compatible OpenAI-style endpoints that implement tool calls. On a provider or completion mode without native tool-call support, automatic capture, retrieval, and periodic dreaming still run, but the model cannot execute the registered function tools.
+Memory updates are temporal: each evidence event carries a timestamp, the reflection prompt includes existing memory IDs and update times, and an update may supersede an active memory only when it names an existing memory in the same scope and links the replacement to new captured evidence. Superseded records are removed from active retrieval indexes and lineage IDs are retained in audit events.
 
-## API compatibility
+The same reflection pass may propose reusable procedural skills. Skills are activated without per-item human approval only when the captured evidence includes a successful outcome or a user correction; unresolved failures, unsupported speculation, and one-off actions do not qualify. Skills use the versioned `SkillStore`, and are stored separately from factual/episodic memory.
 
-The memory settings and proposal review endpoints remain for compatibility with existing installs. The effective lifecycle forces capture, retrieval, and dreaming on and disables human approval; stored legacy opt-outs do not disable these features. The `SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED=false` environment variable can still disable memory write tools for an operator who explicitly wants writes disabled.
+Provider errors leave the durable job available for bounded retries, up to three attempts. Credentials and raw upstream response bodies are not written into worker errors. Provider configuration is explicit, but there is no per-memory or per-skill approval step.
+
+## Tool harness
+
+The built-in server tool registry is exposed through `/api/agent/tools` and registered in SillyTavern's native `ToolManager` when preparing supported Chat Completion requests. Memory and skill tools execute through the same schema-validated registry; provider-native function calling remains dependent on the selected SillyTavern provider/model's supported capabilities. Automatic capture, retrieval, and reflection do not depend on the model remembering to call a memory tool.
+
+## Runtime requirement
+
+Persistent storage uses Node's built-in `node:sqlite` API and SQLite FTS5, requiring Node.js 22.5 or later. The repository's general engine floor remains Node.js 20 so the rest of SillyTavern can still run on older versions, but SillyAgent's persistent memory and worker cannot. The server logs a feature-specific warning instead of preventing ordinary SillyTavern startup.
