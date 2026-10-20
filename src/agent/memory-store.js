@@ -1252,6 +1252,64 @@ export class MemoryStore {
         return !!pending;
     }
 
+    /**
+     * Retire one active memory inside its exact scope after a newer candidate has
+     * been accepted. The old content leaves retrieval indexes; an audit event
+     * retains lineage IDs without copying the superseded text back into context.
+     * @param {object} input Supersession metadata.
+     * @returns {{superseded: boolean, previous?: object}} Result.
+     */
+    supersedeMemory({ memoryId, scope, scopeId, replacementMemoryId, reason, evidenceEventIds = [] }) {
+        if (typeof memoryId !== 'string' || !memoryId) throw new TypeError('A memory ID is required.');
+        if (typeof replacementMemoryId !== 'string' || !replacementMemoryId) {
+            throw new TypeError('A replacement memory ID is required.');
+        }
+        const target = normalizeScope(scope, scopeId);
+        const changeReason = normalizeText(reason, 500, 'Memory supersession reason');
+        if (!Array.isArray(evidenceEventIds) || evidenceEventIds.length > 20
+            || evidenceEventIds.some(id => typeof id !== 'string' || !id || id.length > 256)) {
+            throw new TypeError('Memory supersession evidence must contain up to 20 event IDs.');
+        }
+
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const row = this.#db.prepare(
+                'SELECT * FROM memories WHERE id = ? AND scope = ? AND scope_id = ?',
+            ).get(memoryId, target.scope, target.scopeId);
+            if (!row) {
+                this.#db.exec('COMMIT;');
+                return { superseded: false };
+            }
+            if (row.id === replacementMemoryId) {
+                this.#db.exec('COMMIT;');
+                return { superseded: false };
+            }
+
+            this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(row.id);
+            this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(row.id);
+            this.#db.prepare(
+                'DELETE FROM memories WHERE id = ? AND scope = ? AND scope_id = ?',
+            ).run(row.id, target.scope, target.scopeId);
+            this.recordEvent({
+                scope: target.scope,
+                scopeId: target.scopeId,
+                eventType: 'memory.superseded',
+                content: 'An active memory was superseded by a newer evidence-backed update.',
+                metadata: {
+                    previousMemoryId: row.id,
+                    replacementMemoryId,
+                    reason: changeReason,
+                    evidenceEventIds,
+                },
+            });
+            this.#db.exec('COMMIT;');
+            return { superseded: true, previous: toMemory(row) };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
     getSummary() {
         return {
             events: this.#db.prepare('SELECT COUNT(*) AS count FROM memory_events').get().count,
