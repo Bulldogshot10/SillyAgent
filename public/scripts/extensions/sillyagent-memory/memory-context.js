@@ -20,13 +20,16 @@ export function formatMemoryContext(memories) {
         importance: memory.importance,
         content: String(memory.content ?? ''),
     }));
-    const serialized = JSON.stringify(records, null, 2).replace(/[<>&\u2028\u2029]/gu, character => ({
-        '<': '\\u003c',
-        '>': '\\u003e',
-        '&': '\\u0026',
-        '\u2028': '\\u2028',
-        '\u2029': '\\u2029',
-    })[character]);
+    const serialized = JSON.stringify(records, null, 2)
+        .replace(/[<>&\u2028\u2029]/gu, character => ({
+            '<': '\\u003c',
+            '>': '\\u003e',
+            '&': '\\u0026',
+            '\u2028': '\\u2028',
+            '\u2029': '\\u2029',
+        })[character])
+        .replaceAll(MEMORY_MARKER, '\\u005bSILLYAGENT_MEMORY_CONTEXT_V1\\u005d')
+        .replaceAll('[/SILLYAGENT_MEMORY_CONTEXT_V1]', '\\u005b/SILLYAGENT_MEMORY_CONTEXT_V1\\u005d');
 
     return MEMORY_MARKER + '\n' + MEMORY_CONTEXT_INSTRUCTIONS
         + '\n<records-json>\n' + serialized
