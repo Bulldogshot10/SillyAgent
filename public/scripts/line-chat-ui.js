@@ -1,7 +1,3 @@
-import { eventSource, event_types, getCurrentChatId } from '../script.js';
-import { getRecentChats, openRecentCharacterChat, openRecentGroupChat } from './welcome-screen.js';
-import { getGroupAvatar, groups, selected_group } from './group-chats.js';
-
 (() => {
     'use strict';
 
@@ -22,6 +18,18 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
     let appReady = false;
     let uiInitialized = false;
 
+    // Load the core modules dynamically so a failed app bootstrap doesn't suppress the shell.
+    let eventSource = null;
+    let event_types = null;
+    let getCurrentChatId = () => null;
+    let getRecentChats = async () => [];
+    let openRecentCharacterChat = async () => {};
+    let openRecentGroupChat = async () => {};
+    let getGroupAvatar = () => null;
+    let groups = [];
+    let groupChatsModule = null;
+
+    const getSelectedGroup = () => groupChatsModule?.selected_group || null;
     const byId = id => document.getElementById(id);
     const isMobile = () => window.matchMedia('(max-width: 760px)').matches;
 
@@ -327,8 +335,9 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
         const fragment = document.createDocumentFragment();
         filtered.forEach(chat => {
             const row = createRecentChatRow(chat);
+            const selectedGroup = getSelectedGroup();
             const isActive = chat.chat_name === getCurrentChatId()
-                && (chat.group ? chat.group === selected_group : !selected_group);
+                && (chat.group ? chat.group === selectedGroup : !selectedGroup);
             row.classList.toggle('is-active', isActive);
             if (isActive) row.setAttribute('aria-current', 'true');
             fragment.append(row);
@@ -472,7 +481,7 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
         const heading = byId('rm_button_selected_ch')?.querySelector('h2');
         const selectedName = (heading?.textContent || '').trim();
         const currentChatId = getCurrentChatId();
-        const currentGroupId = selected_group || '';
+        const currentGroupId = getSelectedGroup() || '';
         const titleNode = byId('sa-line-chat-name');
         const subtitleNode = byId('sa-line-chat-subtitle');
         const imageNode = byId('sa-line-chat-avatar-image');
@@ -659,18 +668,6 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
 
         byId('sa-line-rail')?.addEventListener('click', handleNavigationClick);
 
-        eventSource.on(event_types.CHAT_CHANGED, () => {
-            window.setTimeout(() => {
-                if (isMobile() && document.body.dataset.saView === 'chats' && getCurrentChatId()) {
-                    document.body.dataset.saMobileScreen = 'chat';
-                }
-                syncActiveContact();
-                queueRecentChatsRefresh();
-            }, 80);
-        });
-        eventSource.on(event_types.CHAT_RENAMED, queueRecentChatsRefresh);
-        eventSource.on(event_types.CHAT_DELETED, queueRecentChatsRefresh);
-
         const selectedCharacter = byId('rm_button_selected_ch');
         if (selectedCharacter) {
             new MutationObserver(() => window.setTimeout(syncActiveContact, 0))
@@ -685,20 +682,73 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
         console.info('[SillyAgent UI] Chat-first interface ready.');
     }
 
-    // Build the shell at page load so the interface is never left blank, but wait for
-    // SillyTavern's CSRF/session initialization before making chat API requests.
-    eventSource.on(event_types.APP_READY, () => {
-        appReady = true;
-        if (!uiInitialized) {
-            init();
-        } else {
-            void loadRecentChats(true);
+    function showCoreInitializationError(error) {
+        appReady = false;
+        const list = byId('sa-line-contacts-slot');
+        if (list) {
+            const message = node('div', 'sa-line-empty');
+            message.append(
+                node('p', '', 'SillyTavern could not finish initializing, so chat data is unavailable.'),
+                node('p', 'sa-line-workspace-status error', error?.message || 'Core initialization failed.'),
+                node('p', 'sa-line-inbox-status', 'Check the Termux log for the first error above this message.'),
+            );
+            list.replaceChildren(message);
         }
-    });
+        console.error('[SillyAgent UI] Core initialization failed; LINE shell remains available.', error);
+    }
 
-    if (document.readyState === 'complete') {
-        init();
+    async function connectCore() {
+        try {
+            const [core, welcome, groupModule] = await Promise.all([
+                import('../script.js'),
+                import('./welcome-screen.js'),
+                import('./group-chats.js'),
+            ]);
+
+            eventSource = core.eventSource;
+            event_types = core.event_types;
+            getCurrentChatId = core.getCurrentChatId;
+            getRecentChats = welcome.getRecentChats;
+            openRecentCharacterChat = welcome.openRecentCharacterChat;
+            openRecentGroupChat = welcome.openRecentGroupChat;
+            getGroupAvatar = groupModule.getGroupAvatar;
+            groups = groupModule.groups;
+            groupChatsModule = groupModule;
+
+            appReady = true;
+            eventSource.on(event_types.CHAT_CHANGED, () => {
+                window.setTimeout(() => {
+                    if (isMobile() && document.body.dataset.saView === 'chats' && getCurrentChatId()) {
+                        document.body.dataset.saMobileScreen = 'chat';
+                    }
+                    syncActiveContact();
+                    queueRecentChatsRefresh();
+                }, 80);
+            });
+            eventSource.on(event_types.CHAT_RENAMED, queueRecentChatsRefresh);
+            eventSource.on(event_types.CHAT_DELETED, queueRecentChatsRefresh);
+            eventSource.on(event_types.APP_READY, () => {
+                appReady = true;
+                void loadRecentChats(true);
+            });
+
+            document.body.dataset.saMobileScreen = isMobile() && !getCurrentChatId() ? 'list' : 'chat';
+            syncActiveContact();
+            void loadRecentChats(true);
+        } catch (error) {
+            showCoreInitializationError(error);
+        }
+    }
+
+    // Mount the shell independently of the main app module so initialization failures
+    // are visible rather than leaving the whole page blank.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            init();
+            void connectCore();
+        }, { once: true });
     } else {
-        window.addEventListener('load', init, { once: true });
+        init();
+        void connectCore();
     }
 })();
