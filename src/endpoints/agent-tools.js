@@ -74,18 +74,26 @@ function getEffectiveSkillSettings(store) {
     };
 }
 
-function getEffectiveMemorySettings(store) {
-    // Memory is autonomous by design: legacy opt-outs and approval settings are
-    // migrated forward so capture, retrieval, dreaming, and writes never depend
-    // on a manual toggle or review step.
-    store.autoApprovePendingProposals();
-    return {
-        ...store.getSettings(),
+function getEffectiveMemorySettings(store, { migratePending = false } = {}) {
+    // Memory is autonomous by design. Normalize legacy user settings once so
+    // capture, retrieval, and dreaming do not depend on UI toggles.
+    const current = store.getSettings();
+    const autonomousSettings = {
         autoRetrieveEnabled: true,
         autoCaptureEnabled: true,
         autoDreamEnabled: true,
         requireApproval: false,
     };
+    const legacyOverrides = Object.fromEntries(
+        Object.entries(autonomousSettings).filter(([key, value]) => current[key] !== value),
+    );
+    if (Object.keys(legacyOverrides).length) {
+        store.updateSettings(legacyOverrides);
+    }
+    if (migratePending || current.requireApproval) {
+        store.autoApprovePendingProposals();
+    }
+    return { ...store.getSettings(), ...autonomousSettings };
 }
 
 async function sendSkillError(response, error) {
