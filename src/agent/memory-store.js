@@ -236,6 +236,17 @@ export class MemoryStore {
             'capture_key TEXT PRIMARY KEY, event_id TEXT NOT NULL, created_at INTEGER NOT NULL);',
         );
         this.#db.exec(
+            'CREATE TABLE IF NOT EXISTS memory_reflection_jobs (' +
+            'id TEXT PRIMARY KEY, scope_id TEXT NOT NULL, raw_chat_id TEXT NOT NULL, character_id TEXT NOT NULL DEFAULT \'\', ' +
+            'mode TEXT NOT NULL CHECK (mode IN (\'extract\', \'dream\')), trigger_event_id TEXT NOT NULL, ' +
+            'trigger_count INTEGER NOT NULL, status TEXT NOT NULL DEFAULT \'pending\' ' +
+            'CHECK (status IN (\'pending\', \'running\', \'completed\', \'failed\')), ' +
+            'attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL, lease_until INTEGER, claim_token TEXT, ' +
+            'last_error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, completed_at INTEGER, ' +
+            'UNIQUE(trigger_event_id, mode));',
+        );
+        this.#db.exec('CREATE INDEX IF NOT EXISTS memory_reflection_jobs_queue ON memory_reflection_jobs(status, available_at, created_at);');
+        this.#db.exec(
             'CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(' +
             'memory_id UNINDEXED, scope UNINDEXED, scope_id UNINDEXED, content, ' +
             'tokenize = \'unicode61 remove_diacritics 2\');',
@@ -1027,6 +1038,142 @@ export class MemoryStore {
             this.#db.exec('ROLLBACK;');
             throw error;
         }
+    }
+
+    /**
+     * Persist a background reflection job. Jobs survive browser and server restarts.
+     * @param {object} input Queue record.
+     * @returns {object} The queued job and whether a new row was inserted.
+     */
+    enqueueReflectionJob({ scopeId, chatId, characterId = null, mode, triggerEventId, triggerCount, createdAt = Date.now() }) {
+        const target = normalizeScope('chat', scopeId);
+        const rawChatId = normalizeText(chatId, 256, 'Raw chat ID');
+        const safeCharacterId = characterId == null ? '' : normalizeText(characterId, 256, 'Character ID');
+        if (!['extract', 'dream'].includes(mode)) throw new TypeError('Reflection mode must be extract or dream.');
+        const eventId = normalizeText(triggerEventId, 256, 'Trigger event ID');
+        if (!Number.isSafeInteger(triggerCount) || triggerCount < 1) throw new TypeError('Trigger count must be a positive integer.');
+        if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Job timestamp must be a non-negative integer.');
+
+        const result = this.#db.prepare(
+            'INSERT OR IGNORE INTO memory_reflection_jobs ' +
+            '(id, scope_id, raw_chat_id, character_id, mode, trigger_event_id, trigger_count, status, attempts, available_at, created_at, updated_at) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, \'pending\', 0, ?, ?, ?)',
+        ).run(randomUUID(), target.scopeId, rawChatId, safeCharacterId, mode, eventId, triggerCount, createdAt, createdAt, createdAt);
+        const row = this.#db.prepare(
+            'SELECT * FROM memory_reflection_jobs WHERE trigger_event_id = ? AND mode = ?',
+        ).get(eventId, mode);
+        return { job: this.#toReflectionJob(row), created: result.changes > 0 };
+    }
+
+    #toReflectionJob(row) {
+        return row ? {
+            id: row.id,
+            scopeId: row.scope_id,
+            chatId: row.raw_chat_id,
+            characterId: row.character_id || null,
+            mode: row.mode,
+            triggerEventId: row.trigger_event_id,
+            triggerCount: row.trigger_count,
+            status: row.status,
+            attempts: row.attempts,
+            claimToken: row.claim_token,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            lastError: row.last_error,
+        } : null;
+    }
+
+    /**
+     * Claim one queued job for the active character, or the exact active chat when no character is selected.
+     * Expired leases are retried; failed jobs stop after three attempts.
+     * @param {object} input Claim options.
+     * @returns {object|null} Claimed job.
+     */
+    claimReflectionJob({ scopeId, characterId = null, claimToken = randomUUID(), leaseMs = 300000, now = Date.now() }) {
+        const target = normalizeScope('chat', scopeId);
+        const safeCharacterId = characterId == null ? '' : normalizeText(characterId, 256, 'Character ID');
+        const boundedLease = Math.max(30000, Math.min(900000, Number.isInteger(leaseMs) ? leaseMs : 300000));
+        if (typeof claimToken !== 'string' || !claimToken.trim() || claimToken.length > 256) {
+            throw new TypeError('A valid reflection claim token is required.');
+        }
+        if (!Number.isSafeInteger(now) || now < 0) throw new TypeError('Claim time must be a non-negative integer.');
+
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const expired = this.#db.prepare(
+                'SELECT id, attempts FROM memory_reflection_jobs WHERE status = \'running\' AND lease_until <= ?',
+            ).all(now);
+            for (const job of expired) {
+                const status = job.attempts >= 3 ? 'failed' : 'pending';
+                this.#db.prepare(
+                    'UPDATE memory_reflection_jobs SET status = ?, available_at = ?, lease_until = NULL, claim_token = NULL, ' +
+                    'last_error = CASE WHEN ? = \'failed\' THEN \'Worker lease expired after three attempts.\' ELSE last_error END, updated_at = ? WHERE id = ?',
+                ).run(status, now + 15000, status, now, job.id);
+            }
+
+            const row = safeCharacterId
+                ? this.#db.prepare(
+                    'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = ? ' +
+                    'ORDER BY CASE mode WHEN \'extract\' THEN 0 ELSE 1 END, created_at ASC LIMIT 1',
+                ).get(now, safeCharacterId)
+                : this.#db.prepare(
+                    'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = \'\' AND scope_id = ? ' +
+                    'ORDER BY created_at ASC LIMIT 1',
+                ).get(now, target.scopeId);
+
+            if (!row) {
+                this.#db.exec('COMMIT;');
+                return null;
+            }
+            this.#db.prepare(
+                'UPDATE memory_reflection_jobs SET status = \'running\', attempts = attempts + 1, lease_until = ?, claim_token = ?, updated_at = ? WHERE id = ? AND status = \'pending\'',
+            ).run(now + boundedLease, claimToken, now, row.id);
+            const claimed = this.#db.prepare('SELECT * FROM memory_reflection_jobs WHERE id = ?').get(row.id);
+            this.#db.exec('COMMIT;');
+            return this.#toReflectionJob(claimed);
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    completeReflectionJob(jobId, claimToken, now = Date.now()) {
+        if (typeof jobId !== 'string' || !jobId || typeof claimToken !== 'string' || !claimToken) {
+            throw new TypeError('A job ID and claim token are required.');
+        }
+        const result = this.#db.prepare(
+            'UPDATE memory_reflection_jobs SET status = \'completed\', completed_at = ?, updated_at = ?, lease_until = NULL, claim_token = NULL, last_error = NULL ' +
+            'WHERE id = ? AND status = \'running\' AND claim_token = ?',
+        ).run(now, now, jobId, claimToken);
+        return result.changes > 0;
+    }
+
+    failReflectionJob(jobId, claimToken, error, now = Date.now()) {
+        if (typeof jobId !== 'string' || !jobId || typeof claimToken !== 'string' || !claimToken) {
+            throw new TypeError('A job ID and claim token are required.');
+        }
+        const row = this.#db.prepare(
+            'SELECT attempts FROM memory_reflection_jobs WHERE id = ? AND status = \'running\' AND claim_token = ?',
+        ).get(jobId, claimToken);
+        if (!row) return false;
+        const status = row.attempts >= 3 ? 'failed' : 'pending';
+        const availableAt = now + Math.min(300000, 15000 * row.attempts);
+        this.#db.prepare(
+            'UPDATE memory_reflection_jobs SET status = ?, available_at = ?, updated_at = ?, lease_until = NULL, claim_token = NULL, last_error = ? ' +
+            'WHERE id = ? AND status = \'running\' AND claim_token = ?',
+        ).run(status, availableAt, now, String(error ?? 'Unknown reflection failure.').slice(0, 500), jobId, claimToken);
+        return true;
+    }
+
+    listReflectionJobs({ status, limit = 50 } = {}) {
+        if (status != null && !['pending', 'running', 'completed', 'failed'].includes(status)) {
+            throw new TypeError('Invalid reflection job status.');
+        }
+        const safeLimit = Math.max(1, Math.min(200, Number.isInteger(limit) ? limit : 50));
+        const rows = status
+            ? this.#db.prepare('SELECT * FROM memory_reflection_jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?').all(status, safeLimit)
+            : this.#db.prepare('SELECT * FROM memory_reflection_jobs ORDER BY created_at DESC LIMIT ?').all(safeLimit);
+        return rows.map(row => this.#toReflectionJob(row));
     }
 
     /**
