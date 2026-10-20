@@ -295,7 +295,7 @@ describe('agent tools API', () => {
         const manualDreamResponse = await fetch(baseUrl + '/dream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ activeChatId: 'dream-test-chat' }),
+            body: JSON.stringify({ activeChatId: 'dream-test-chat', activeCharacterId: 'julia-card.png' }),
         });
         expect(manualDreamResponse.status).toBe(404);
 
