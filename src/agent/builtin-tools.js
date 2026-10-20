@@ -48,9 +48,9 @@ function inferMemoryScope({ kind = 'fact', content = '' }, context = {}) {
     const activeChatId = context.activeChatId;
     const activeCharacterId = context.activeCharacterId;
 
-    if (['preference', 'goal'].includes(kind)) return 'user';
-    if (kind === 'relationship') return activeCharacterId ? 'character' : 'user';
-    if (kind === 'world_state') return activeCharacterId ? 'character' : (activeChatId ? 'chat' : 'user');
+    if (['preference', 'goal', 'relationship', 'world_state'].includes(kind)) {
+        return activeCharacterId ? 'character' : 'chat';
+    }
 
     const characterSpecific = /\b(character|persona|fictional|backstory|appearance|personality|outfit|roleplay)\b/u.test(text);
     if (characterSpecific && activeCharacterId) return 'character';
@@ -58,9 +58,9 @@ function inferMemoryScope({ kind = 'fact', content = '' }, context = {}) {
     const transient = /\b(this chat|this conversation|this session|current session|temporary|right now|currently debugging|current debugging|for this task)\b/u.test(text);
     if (transient && activeChatId) return 'chat';
 
-    // Facts and durable events default to user scope unless explicitly tied to a character
-    // or a transient session. The model can always specify another scope when appropriate.
-    return 'user';
+    // Persistent memory is isolated by character. Never create a global user memory
+    // that can leak into unrelated character conversations.
+    return activeCharacterId ? 'character' : 'chat';
 }
 
 /**
@@ -91,7 +91,7 @@ export function registerBuiltinTools(registry = toolRegistry) {
     if (!registry.hasTool('memory_search')) {
         registry.registerTool({
             name: 'memory_search',
-            description: 'Search persistent memories relevant to the current roleplay, character, chat, or user.',
+            description: 'Search memories for the active character and current chat only. Character memory never crosses into another character. Legacy user scope resolves to the active character partition.',
             toolset: 'memory',
             permission: 'read',
             timeoutMs: 2000,
@@ -120,23 +120,30 @@ export function registerBuiltinTools(registry = toolRegistry) {
     if (!registry.hasTool('memory_propose')) {
         registry.registerTool({
             name: 'memory_propose',
-            description: 'Autonomously store a durable memory from a useful fact, preference, goal, relationship, or event. Call this proactively when the user reveals something worth remembering; do not wait for the user to ask. Choose scope automatically: user for durable user facts/preferences/goals, character for this character’s identity/backstory or character-specific relationship continuity, chat for temporary task/session context. Avoid duplicates, transient trivia, secrets, and credentials. Memories are saved and made retrievable immediately by default.',
+            description: 'Autonomously store a durable memory from a useful fact, preference, goal, relationship, or event. Call proactively when useful information emerges; never wait for the user to ask. All persistent memories are partitioned by the active character: durable user facts/preferences/goals and this character identity/backstory/relationship continuity belong to this character scope; transient task/session context belongs to the current chat. Never write to a global user pool or combine memory across characters. Scope is optional because the server infers it. Avoid duplicates, transient trivia, secrets, and credentials.',
             toolset: 'memory',
             permission: 'write',
             timeoutMs: 2000,
             inputSchema: MEMORY_PROPOSE_SCHEMA,
             execute: async ({ input, context }) => {
                 const kind = input.kind ?? 'fact';
-                const scope = input.scope ?? inferMemoryScope({ kind, content: input.content }, context);
+                const requestedScope = input.scope ?? inferMemoryScope({ kind, content: input.content }, context);
+                // Compatibility with models that still request "user" scope:
+                // preserve the fact only inside the active character's memory.
+                const scope = requestedScope === 'user'
+                    ? (context.activeCharacterId ? 'character' : 'chat')
+                    : requestedScope === 'character' && !context.activeCharacterId
+                        ? 'chat'
+                        : requestedScope;
                 let scopeId = '';
                 if (scope === 'chat') scopeId = context.activeChatId;
                 if (scope === 'character') scopeId = context.activeCharacterId;
 
-                if (scope !== 'user' && (typeof scopeId !== 'string' || !scopeId)) {
+                if (typeof scopeId !== 'string' || !scopeId) {
                     return {
                         created: false,
                         scope,
-                        message: 'Automatic scope resolution selected a contextual scope, but no active context ID is available. Retry with user scope or wait for a chat/character context.',
+                        message: 'No active character or chat ID is available, so no memory was written.',
                     };
                 }
 
