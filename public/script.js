@@ -693,7 +693,7 @@ export async function pingServer() {
 //MARK: firstLoadInit
 async function firstLoadInit() {
     try {
-        const tokenResponse = await fetch('/csrf-token', { cache: 'no-store', credentials: 'same-origin' });
+        const tokenResponse = await fetch('/csrf-token');
         const tokenData = await tokenResponse.json();
         token = tokenData.token;
     } catch {
