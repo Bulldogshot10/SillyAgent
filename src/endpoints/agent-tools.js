@@ -4,7 +4,6 @@ import express from 'express';
 
 import { MemoryStore } from '../agent/memory-store.js';
 import { SkillStore } from '../agent/skill-store.js';
-import { DreamingEngine } from '../agent/dreaming.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
 import { registerSkillTools } from '../agent/skill-tools.js';
 import { toolRegistry } from '../agent/tool-registry.js';
@@ -464,6 +463,52 @@ router.post('/retrieve-context', async (request, response) => {
     }
 });
 
+router.post('/memory/reflection-context', async (request, response) => {
+    const activeChatId = getSafeContextId(request.body?.activeChatId);
+    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
+    if (!activeChatId) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_chat_id', message: 'Autonomous reflection requires an active chat.' },
+        });
+    }
+
+    try {
+        const store = await getMemoryStore(request);
+        const scopedChatId = getScopedChatId(activeChatId, activeCharacterId);
+        const captured = store.listCapturedTurnsAcrossChats({ limit: 2000 });
+        const isolatedTurns = activeCharacterId
+            ? captured.filter(event => event.metadata?.characterId === activeCharacterId)
+            : captured.filter(event => event.scopeId === scopedChatId);
+        const turns = isolatedTurns.slice(-80).map(event => ({
+            role: event.metadata?.role,
+            content: event.content,
+            chatId: event.scopeId,
+            createdAt: event.createdAt,
+        })).filter(turn => ['user', 'assistant'].includes(turn.role));
+
+        const characterMemories = activeCharacterId
+            ? store.listMemories({ scope: 'character', scopeId: activeCharacterId, limit: 50 })
+            : [];
+        const chatMemories = store.listMemories({ scope: 'chat', scopeId: scopedChatId, limit: 20 });
+
+        return response.json({
+            turns,
+            memories: [...characterMemories, ...chatMemories].map(memory => ({
+                id: memory.id,
+                kind: memory.kind,
+                scope: memory.scope,
+                content: memory.content,
+                importance: memory.importance,
+            })),
+            activeCharacterId,
+            activeChatId: scopedChatId,
+        });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
 router.post('/capture-turn', async (request, response) => {
     const body = request.body ?? {};
     const activeChatId = getSafeContextId(body.activeChatId);
@@ -494,15 +539,7 @@ router.post('/capture-turn', async (request, response) => {
             metadata: { characterId: activeCharacterId, messageKey: body.messageKey },
         });
         const capturedCount = store.countCapturedTurns(scopedChatId);
-        let dreaming = null;
-        if (!captured.duplicate && settings.autoDreamEnabled && capturedCount > 0 && capturedCount % 12 === 0) {
-            dreaming = new DreamingEngine(store).run({
-                scopeId: scopedChatId,
-                activeCharacterId,
-                requireApproval: settings.requireApproval,
-            });
-        }
-        return response.json({ captured: true, duplicate: captured.duplicate, capturedCount, dreaming });
+        return response.json({ captured: true, duplicate: captured.duplicate, capturedCount });
     } catch (error) {
         return sendMemoryError(response, error);
     }
