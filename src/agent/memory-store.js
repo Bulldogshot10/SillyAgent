@@ -105,7 +105,7 @@ const CJK_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Scr
  * @returns {boolean} Whether the runtime meets the memory feature requirement.
  */
 export function supportsPersistentMemoryRuntime(version = process.versions.node) {
-    const match = typeof version === 'string' ? /^v?(\\d+)\\.(\\d+)\\.(\\d+)/u.exec(version) : null;
+    const match = typeof version === 'string' ? /^v?(\d+)\.(\d+)\.(\d+)/u.exec(version) : null;
     if (!match) return false;
 
     const major = Number(match[1]);
