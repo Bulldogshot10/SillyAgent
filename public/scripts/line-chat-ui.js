@@ -19,6 +19,8 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
     let recentRefreshTimer = null;
     let toolsLoaded = false;
     let toolsLoading = false;
+    let appReady = false;
+    let uiInitialized = false;
 
     const byId = id => document.getElementById(id);
     const isMobile = () => window.matchMedia('(max-width: 760px)').matches;
@@ -344,6 +346,11 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
     }
 
     async function loadRecentChats(force = false) {
+        const list = byId('sa-line-contacts-slot');
+        if (!appReady) {
+            list?.replaceChildren(node('p', 'sa-line-inbox-status', 'Loading recent chats…'));
+            return;
+        }
         if (recentChatsPromise) {
             if (!force) return recentChatsPromise;
             await recentChatsPromise;
@@ -354,7 +361,6 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
             return;
         }
 
-        const list = byId('sa-line-contacts-slot');
         list?.replaceChildren(node('p', 'sa-line-inbox-status', 'Loading recent chats…'));
 
         recentChatsPromise = (async () => {
@@ -639,7 +645,8 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
     }
 
     function init() {
-        if (!document.body || !byId('sheld') || !byId('right-nav-panel')) return;
+        if (uiInitialized || !document.body || !byId('sheld') || !byId('right-nav-panel')) return;
+        uiInitialized = true;
         buildShell();
         document.body.classList.add('sa-line-ui');
         document.body.dataset.saView = 'chats';
@@ -663,7 +670,6 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
         });
         eventSource.on(event_types.CHAT_RENAMED, queueRecentChatsRefresh);
         eventSource.on(event_types.CHAT_DELETED, queueRecentChatsRefresh);
-        eventSource.on(event_types.APP_READY, queueRecentChatsRefresh);
 
         const selectedCharacter = byId('rm_button_selected_ch');
         if (selectedCharacter) {
@@ -679,7 +685,20 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
         console.info('[SillyAgent UI] Chat-first interface ready.');
     }
 
-    // Wait for SillyTavern's initialization to finish before making API calls.
-    // In particular, getRequestHeaders() needs the CSRF token fetched by firstLoadInit().
-    eventSource.on(event_types.APP_READY, init);
+    // Build the shell at page load so the interface is never left blank, but wait for
+    // SillyTavern's CSRF/session initialization before making chat API requests.
+    eventSource.on(event_types.APP_READY, () => {
+        appReady = true;
+        if (!uiInitialized) {
+            init();
+        } else {
+            void loadRecentChats(true);
+        }
+    });
+
+    if (document.readyState === 'complete') {
+        init();
+    } else {
+        window.addEventListener('load', init, { once: true });
+    }
 })();
