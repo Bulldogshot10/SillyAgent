@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
 
 const CONFIG_DIRECTORY = 'sillyagent';
@@ -109,12 +110,19 @@ export function saveReflectionProviderConfig(root, input) {
     }
 
     const config = validateConfig(input);
-    fs.writeFileSync(filename + '.tmp', JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'w' });
+    const temporaryPath = filename + '.' + randomUUID() + '.tmp';
+    let descriptor;
     try {
-        fs.renameSync(filename + '.tmp', filename);
+        descriptor = fs.openSync(temporaryPath, 'wx', 0o600);
+        fs.writeFileSync(descriptor, JSON.stringify(config, null, 2), 'utf8');
+        fs.fsyncSync(descriptor);
+        fs.closeSync(descriptor);
+        descriptor = undefined;
+        fs.renameSync(temporaryPath, filename);
         if (process.platform !== 'win32') fs.chmodSync(filename, 0o600);
     } finally {
-        try { fs.rmSync(filename + '.tmp', { force: true }); } catch { /* Best-effort temporary file cleanup. */ }
+        if (descriptor !== undefined) fs.closeSync(descriptor);
+        try { fs.rmSync(temporaryPath, { force: true }); } catch { /* Best-effort temporary file cleanup. */ }
     }
     return config;
 }
