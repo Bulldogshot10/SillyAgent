@@ -494,10 +494,11 @@ export class MemoryStore {
         const conditions = [];
         const scopeParams = [];
 
-        if (scope === 'user' || scope === 'character') {
-            // "User" scope is retained for storage compatibility only. A user-memory
-            // lookup resolves to the active character's partition; it never reads a
-            // global pool shared by unrelated characters.
+        if (scope === 'user') {
+            // Legacy global records remain directly inspectable for migration,
+            // but automatic relevant searches below never include this scope.
+            conditions.push('m.scope = \'user\'');
+        } else if (scope === 'character') {
             if (typeof activeCharacterId !== 'string' || !activeCharacterId) return [];
             conditions.push('m.scope = \'character\' AND m.scope_id = ?');
             scopeParams.push(activeCharacterId);
