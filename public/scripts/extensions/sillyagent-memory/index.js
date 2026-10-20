@@ -210,10 +210,10 @@ async function reviewProposal(id, decision) {
 }
 
 async function deleteMemory(id) {
-    if (!window.confirm('Delete this accepted memory? It will no longer be retrieved.')) return;
+    if (!window.confirm('Delete this memory and all same-text copies, proposals, and source events in this scope? Raw captured chat turns remain and must be cleared separately.')) return;
     try {
         await requestApi('/memory/' + encodeURIComponent(id), { method: 'DELETE' });
-        setStatus('Memory deleted.');
+        setStatus('Memory and linked records deleted. Captured chat turns remain until cleared separately.');
         await refreshPanel();
     } catch (error) {
         setStatus(error.message, true);
