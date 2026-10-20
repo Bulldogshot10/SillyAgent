@@ -196,6 +196,7 @@
         const slot = byId('sa-line-page-body');
         const panel = byId('sillyagent_memory_settings');
         if (!slot || document.body.dataset.saView !== 'memory') return;
+        if (panel && panel.parentNode === slot) return;
 
         slot.replaceChildren();
         if (!panel) {
