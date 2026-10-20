@@ -4,16 +4,20 @@ import express from 'express';
 
 import { getConfigValue } from '../util.js';
 import { MemoryStore } from '../agent/memory-store.js';
+import { SkillStore } from '../agent/skill-store.js';
 import { DreamingEngine } from '../agent/dreaming.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
+import { registerSkillTools } from '../agent/skill-tools.js';
 import { toolRegistry } from '../agent/tool-registry.js';
 
 registerBuiltinTools();
+registerSkillTools();
 
 export const router = express.Router();
 
 const MAX_REQUEST_BYTES = 16 * 1024;
 const memoryStores = new Map();
+const skillStores = new Map();
 
 function getSafeContextId(value) {
     return typeof value === 'string' && value.trim().length > 0 && value.length <= 256
@@ -36,6 +40,40 @@ async function getMemoryStore(request) {
     return await memoryStores.get(databasePath);
 }
 
+async function getSkillStore(request) {
+    const root = request.user?.directories?.root ?? globalThis.DATA_ROOT;
+    if (typeof root !== 'string' || !root) throw new Error('Could not determine the current user data directory.');
+
+    const directory = path.join(root, 'sillyagent');
+    const databasePath = path.join(directory, 'skills.sqlite');
+
+    if (!skillStores.has(databasePath)) {
+        const opening = SkillStore.open(databasePath);
+        skillStores.set(databasePath, opening);
+        opening.catch(() => skillStores.delete(databasePath));
+    }
+    return await skillStores.get(databasePath);
+}
+
+function getEffectiveSkillSettings(store) {
+    const settings = store.getSettings();
+    return {
+        ...settings,
+        requireApproval: !!getConfigValue('agentTools.skillsRequireApproval', settings.requireApproval, 'boolean'),
+    };
+}
+
+async function sendSkillError(response, error) {
+    console.error('[SillyAgent skills]', error);
+    return response.status(503).json({
+        ok: false,
+        error: {
+            code: 'skills_unavailable',
+            message: error?.message || 'Persistent agent skills are unavailable.',
+        },
+    });
+}
+
 async function sendMemoryError(response, error) {
     console.error('[SillyAgent memory]', error);
     return response.status(503).json({
@@ -49,9 +87,176 @@ async function sendMemoryError(response, error) {
 
 router.get('/', (_request, response) => {
     return response.json({
-        tools: toolRegistry.getFunctionDefinitions({ toolsets: ['roleplay', 'memory'] }),
+        tools: toolRegistry.getFunctionDefinitions({ toolsets: ['roleplay', 'memory', 'skills'] }),
     });
 });
+
+router.get('/skills', async (request, response) => {
+    const query = typeof request.query.query === 'string' ? request.query.query : '';
+    const limit = Number.parseInt(request.query.limit, 10);
+    try {
+        const store = await getSkillStore(request);
+        return response.json({
+            skills: store.listSkills({ query, limit }),
+            settings: getEffectiveSkillSettings(store),
+            disclosure: 'metadata-only; fetch a selected skill to load its instructions',
+        });
+    } catch (error) {
+        return sendSkillError(response, error);
+    }
+});
+
+router.get('/skills/settings', async (request, response) => {
+    try {
+        const store = await getSkillStore(request);
+        return response.json({ settings: getEffectiveSkillSettings(store) });
+    } catch (error) {
+        return sendSkillError(response, error);
+    }
+});
+
+router.post('/skills/settings', async (request, response) => {
+    try {
+        const store = await getSkillStore(request);
+        store.updateSettings(request.body ?? {});
+        return response.json({ ok: true, settings: getEffectiveSkillSettings(store) });
+    } catch (error) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'invalid_skill_settings', message: error?.message || 'Skill settings were invalid.' },
+        });
+    }
+});
+
+router.get('/skills/pending', async (request, response) => {
+    try {
+        const store = await getSkillStore(request);
+        return response.json({ revisions: store.listPendingRevisions({ limit: 100 }) });
+    } catch (error) {
+        return sendSkillError(response, error);
+    }
+});
+
+router.get('/skills/:slug/history', async (request, response) => {
+    try {
+        const store = await getSkillStore(request);
+        return response.json({
+            slug: request.params.slug,
+            revisions: store.getHistory(request.params.slug, { limit: 100 }),
+            events: store.getEvents({ slug: request.params.slug, limit: 100 }),
+        });
+    } catch (error) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'invalid_skill_history_query', message: error?.message || 'Skill history could not be read.' },
+        });
+    }
+});
+
+router.get('/skills/:slug/revisions/:version', async (request, response) => {
+    const version = Number(request.params.version);
+    if (!Number.isSafeInteger(version) || version < 1) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'invalid_skill_version', message: 'A positive skill version is required.' },
+        });
+    }
+    try {
+        const store = await getSkillStore(request);
+        const revision = store.getRevision(request.params.slug, version);
+        if (!revision) {
+            return response.status(404).json({
+                ok: false,
+                error: { code: 'skill_revision_not_found', message: 'No revision exists for that skill version.' },
+            });
+        }
+        return response.json({ revision });
+    } catch (error) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'invalid_skill_revision', message: error?.message || 'Skill revision could not be read.' },
+        });
+    }
+});
+
+router.post('/skills/:slug/revisions/:version/review', async (request, response) => {
+    const version = Number.parseInt(request.params.version, 10);
+    const decision = request.body?.decision;
+    if (!Number.isInteger(version) || version < 1 || !['approve', 'reject'].includes(decision)) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'invalid_skill_review', message: 'A positive version and approve/reject decision are required.' },
+        });
+    }
+    try {
+        const store = await getSkillStore(request);
+        const revision = store.reviewRevision(request.params.slug, version, decision);
+        if (!revision) {
+            return response.status(404).json({
+                ok: false,
+                error: { code: 'skill_revision_not_pending', message: 'No pending revision exists for that skill version.' },
+            });
+        }
+        return response.json({ ok: true, revision, activeSkill: store.readSkill(request.params.slug) });
+    } catch (error) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'skill_review_failed', message: error?.message || 'Skill revision could not be reviewed.' },
+        });
+    }
+});
+
+router.post('/skills/:slug/rollback', async (request, response) => {
+    const targetVersion = request.body?.targetVersion;
+    if (!Number.isInteger(targetVersion) || targetVersion < 1) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'invalid_rollback_target', message: 'targetVersion must be a positive integer.' },
+        });
+    }
+    try {
+        const store = await getSkillStore(request);
+        const settings = getEffectiveSkillSettings(store);
+        const result = store.rollbackSkill(request.params.slug, targetVersion, {
+            requireApproval: settings.requireApproval,
+            reason: request.body?.reason,
+        });
+        const revision = store.getHistory(request.params.slug, { limit: 100 })
+            .find(item => item.version === result.revision.version);
+        return response.json({
+            ok: true,
+            created: result.created,
+            duplicate: result.duplicate,
+            requiresApproval: result.requiresApproval,
+            revision,
+        });
+    } catch (error) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'skill_rollback_failed', message: error?.message || 'Skill rollback failed.' },
+        });
+    }
+});
+
+router.get('/skills/:slug', async (request, response) => {
+    try {
+        const store = await getSkillStore(request);
+        const skill = store.readSkill(request.params.slug);
+        if (!skill) {
+            return response.status(404).json({
+                ok: false,
+                error: { code: 'active_skill_not_found', message: 'No active skill exists with that slug.' },
+            });
+        }
+        return response.json({ skill });
+    } catch (error) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'invalid_skill_slug', message: error?.message || 'The skill slug was invalid.' },
+        });
+    }
+});
+
 
 router.get('/memory/proposals', async (request, response) => {
     try {
@@ -295,12 +500,32 @@ router.post('/execute', async (request, response) => {
         }
     }
 
+    let skillStore = null;
+    if (body.name.startsWith('skill_')) {
+        try {
+            skillStore = await getSkillStore(request);
+        } catch (error) {
+            return sendSkillError(response, error);
+        }
+    }
+
+    const memoryWritesEnabled = !!getConfigValue('agentTools.memoryProposalsEnabled', true, 'boolean');
+    const skillWritesEnabled = !!getConfigValue('agentTools.skillWritesEnabled', true, 'boolean');
+    const allowedWriteToolsets = [];
+    if (memoryWritesEnabled) allowedWriteToolsets.push('memory');
+    if (skillWritesEnabled) allowedWriteToolsets.push('skills');
+
     const result = await toolRegistry.executeTool(body.name, body.arguments, {
-        allowedToolsets: ['roleplay', 'memory'],
-        allowWrites: !!getConfigValue('agentTools.memoryProposalsEnabled', true, 'boolean'),
+        allowedToolsets: ['roleplay', 'memory', 'skills'],
+        allowWrites: allowedWriteToolsets.length > 0,
+        allowedWriteToolsets,
         context: {
             source: 'agent-tools-api',
             memoryStore,
+            skillStore,
+            requireSkillApproval: skillStore
+                ? !!getConfigValue('agentTools.skillsRequireApproval', skillStore.getSettings().requireApproval, 'boolean')
+                : false,
             activeChatId: getSafeContextId(body.activeChatId),
             activeCharacterId: getSafeContextId(body.activeCharacterId),
         },

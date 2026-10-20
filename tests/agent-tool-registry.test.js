@@ -152,4 +152,25 @@ describe('ToolRegistry', () => {
         expect(result.result.total).toBe(result.result.rolls.reduce((sum, roll) => sum + roll, 0));
         expect((await registry.executeTool('roleplay_roll_dice', { count: 21, sides: 6 })).error.code).toBe('invalid_input');
     });
+    test('restricts write access to explicitly allowed toolsets', async () => {
+        const registry = new ToolRegistry();
+        const base = {
+            description: 'A test write operation.',
+            permission: 'write',
+            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+            execute: async () => ({ changed: true }),
+        };
+        registry.registerTool({ ...base, name: 'test.memory_write', toolset: 'memory' });
+        registry.registerTool({ ...base, name: 'test.skill_write', toolset: 'skills' });
+
+        expect((await registry.executeTool('test.memory_write', {}, {
+            allowWrites: true,
+            allowedWriteToolsets: ['skills'],
+        })).error.code).toBe('permission_denied');
+        expect((await registry.executeTool('test.skill_write', {}, {
+            allowWrites: true,
+            allowedWriteToolsets: ['skills'],
+        })).ok).toBe(true);
+    });
+
 });

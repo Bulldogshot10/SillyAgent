@@ -273,6 +273,7 @@ export class ToolRegistry {
     async executeTool(name, input, {
         context = {},
         allowedToolsets,
+        allowedWriteToolsets,
         allowWrites = false,
         allowExternal = false,
     } = {}) {
@@ -286,6 +287,9 @@ export class ToolRegistry {
         }
         if (tool.permission === 'write' && !allowWrites) {
             return errorResult(name, 'permission_denied', 'This tool requires write permission.');
+        }
+        if (tool.permission === 'write' && allowedWriteToolsets && !new Set(allowedWriteToolsets).has(tool.toolset)) {
+            return errorResult(name, 'permission_denied', 'This toolset does not have write permission for the current request.');
         }
         if (tool.permission === 'external' && !allowExternal) {
             return errorResult(name, 'permission_denied', 'This tool requires external-access permission.');

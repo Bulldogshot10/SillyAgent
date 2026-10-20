@@ -394,3 +394,12 @@ gemini:
 enableServerPlugins: false
 # Attempt to automatically update server plugins on startup
 enableServerPluginsAutoUpdate: true
+
+# -- SILLYAGENT AGENT TOOLS --
+agentTools:
+  # Allow agent-managed skills to be created, improved, and rolled back by tools.
+  skillWritesEnabled: true
+  # Require human approval before a proposed skill revision becomes active.
+  skillsRequireApproval: false
+  # Allow the existing memory-proposal write tool.
+  memoryProposalsEnabled: true
