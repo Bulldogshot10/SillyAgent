@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
 
 const CONFIG_DIRECTORY = 'sillyagent';
 const CONFIG_FILENAME = 'reflection-provider.json';
@@ -15,23 +14,53 @@ const DEFAULT_CONFIG = Object.freeze({
 
 export const REFLECTION_SECRET_OPTIONS = [
     'none',
-    SECRET_KEYS.OPENAI,
-    SECRET_KEYS.CUSTOM,
-    SECRET_KEYS.OPENROUTER,
-    SECRET_KEYS.GROQ,
-    SECRET_KEYS.DEEPSEEK,
-    SECRET_KEYS.MISTRALAI,
-    SECRET_KEYS.MOONSHOT,
-    SECRET_KEYS.XAI,
-    SECRET_KEYS.FIREWORKS,
-    SECRET_KEYS.CHUTES,
-    SECRET_KEYS.LLAMACPP,
-    SECRET_KEYS.KOBOLDCPP,
-    SECRET_KEYS.OOBA,
-    SECRET_KEYS.VLLM,
-    SECRET_KEYS.TABBY,
-    SECRET_KEYS.APHRODITE,
+    'api_key_openai',
+    'api_key_custom',
+    'api_key_openrouter',
+    'api_key_groq',
+    'api_key_deepseek',
+    'api_key_mistralai',
+    'api_key_moonshot',
+    'api_key_xai',
+    'api_key_fireworks',
+    'api_key_chutes',
+    'api_key_llamacpp',
+    'api_key_koboldcpp',
+    'api_key_ooba',
+    'api_key_vllm',
+    'api_key_tabby',
+    'api_key_aphrodite',
 ];
+
+/**
+ * Read the active SillyTavern secret without importing the Express Secrets
+ * endpoint (which expects app configuration to have been bootstrapped).
+ * The on-disk format matches SecretManager.readSecret: each key maps to a
+ * list of { id, value, active, label } entries.
+ * @param {object} directories SillyTavern user directories.
+ * @param {string} key Secret key identifier.
+ * @returns {string} The active secret value, or an empty string.
+ */
+function readStoredSecret(directories, key) {
+    const root = directories?.root;
+    if (typeof root !== 'string' || !root.trim()) throw new TypeError('A user data directory is required to read the active secret.');
+    const filename = path.join(root, 'secrets.json');
+    let info;
+    try {
+        info = fs.lstatSync(filename);
+    } catch (error) {
+        if (error?.code === 'ENOENT') return '';
+        throw error;
+    }
+    if (info.isSymbolicLink() || !info.isFile()) {
+        throw new Error('SillyTavern secrets file must be a regular file.');
+    }
+    const secrets = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    const entries = secrets?.[key];
+    if (!Array.isArray(entries)) return '';
+    const active = entries.find(entry => entry?.active === true);
+    return typeof active?.value === 'string' ? active.value : '';
+}
 
 function configPath(root) {
     if (typeof root !== 'string' || !root.trim()) {
@@ -133,7 +162,7 @@ export function saveReflectionProviderConfig(root, input) {
 export function getReflectionProviderState(directories) {
     const config = loadReflectionProviderConfig(directories?.root);
     const credentialAvailable = config.secretKey === 'none'
-        || Boolean(readSecret(directories, config.secretKey));
+        || Boolean(readStoredSecret(directories, config.secretKey));
     return { ...config, credentialAvailable, configured: Boolean(config.endpoint && config.model) };
 }
 
@@ -149,7 +178,7 @@ export function getReflectionProviderState(directories) {
  */
 export async function requestReflectionCompletion({ directories, config, messages }) {
     const validated = validateConfig({ ...config, enabled: true });
-    const apiKey = validated.secretKey === 'none' ? '' : readSecret(directories, validated.secretKey);
+    const apiKey = validated.secretKey === 'none' ? '' : readStoredSecret(directories, validated.secretKey);
     if (validated.secretKey !== 'none' && !apiKey) {
         throw new Error('The selected SillyTavern secret is not configured. Choose a credential key with an active secret or select no authentication.');
     }
