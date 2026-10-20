@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import express from 'express';
 
 import { MemoryStore } from '../agent/memory-store.js';
@@ -463,6 +463,70 @@ router.post('/retrieve-context', async (request, response) => {
     }
 });
 
+router.post('/memory/reflection-jobs/claim', async (request, response) => {
+    const activeChatId = getSafeContextId(request.body?.activeChatId);
+    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
+    if (!activeChatId) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_chat_id', message: 'Claiming reflection jobs requires an active chat.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        const job = store.claimReflectionJob({
+            scopeId: getScopedChatId(activeChatId, activeCharacterId),
+            characterId: activeCharacterId,
+            claimToken: randomUUID(),
+        });
+        return response.json({ job });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
+router.post('/memory/reflection-jobs/:id/complete', async (request, response) => {
+    const claimToken = getSafeContextId(request.body?.claimToken);
+    if (!claimToken) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_claim_token', message: 'A reflection job claim token is required.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        const completed = store.completeReflectionJob(request.params.id, claimToken);
+        return completed
+            ? response.json({ ok: true, completed: true })
+            : response.status(409).json({ ok: false, error: { code: 'stale_claim', message: 'The reflection job claim is no longer active.' } });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
+router.post('/memory/reflection-jobs/:id/fail', async (request, response) => {
+    const claimToken = getSafeContextId(request.body?.claimToken);
+    if (!claimToken) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_claim_token', message: 'A reflection job claim token is required.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        const failed = store.failReflectionJob(
+            request.params.id,
+            claimToken,
+            typeof request.body?.error === 'string' ? request.body.error : 'Autonomous reflection failed.',
+        );
+        return failed
+            ? response.json({ ok: true, retried: true })
+            : response.status(409).json({ ok: false, error: { code: 'stale_claim', message: 'The reflection job claim is no longer active.' } });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
 router.post('/memory/reflection-context', async (request, response) => {
     const activeChatId = getSafeContextId(request.body?.activeChatId);
     const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
@@ -539,7 +603,20 @@ router.post('/capture-turn', async (request, response) => {
             metadata: { characterId: activeCharacterId, messageKey: body.messageKey },
         });
         const capturedCount = store.countCapturedTurns(scopedChatId);
-        return response.json({ captured: true, duplicate: captured.duplicate, capturedCount });
+        let queuedReflection = null;
+        if (!captured.duplicate && body.role === 'assistant' && settings.autoDreamEnabled
+            && capturedCount > 0 && capturedCount % 4 === 0) {
+            const mode = capturedCount % 12 === 0 ? 'dream' : 'extract';
+            queuedReflection = store.enqueueReflectionJob({
+                scopeId: scopedChatId,
+                chatId: activeChatId,
+                characterId: activeCharacterId,
+                mode,
+                triggerEventId: captured.event.id,
+                triggerCount: capturedCount,
+            });
+        }
+        return response.json({ captured: true, duplicate: captured.duplicate, capturedCount, queuedReflection });
     } catch (error) {
         return sendMemoryError(response, error);
     }
