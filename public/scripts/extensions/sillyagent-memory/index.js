@@ -1,6 +1,7 @@
 import { getContext, renderExtensionTemplateAsync } from '../../extensions.js';
 import { oai_settings } from '../../openai.js';
 import { formatMemoryContext, hasMemoryContext, insertMemoryContext } from './memory-context.js';
+import { buildAutonomousExtractionPrompt, parseAutonomousExtraction } from './auto-extraction.js';
 import { selected_group } from '../../group-chats.js';
 import {
     characters,
@@ -8,6 +9,7 @@ import {
     event_types,
     getCurrentChatId,
     getRequestHeaders,
+    generateQuietPrompt,
     saveSettingsDebounced,
     this_chid,
 } from '../../../script.js';
@@ -22,6 +24,9 @@ const AUTONOMOUS_MEMORY_INSTRUCTIONS = [
     'Let memory operations happen in the background and continue answering the user naturally. Do not announce routine memory writes unless relevant to the conversation.',
 ].join(' ');
 let refreshInProgress = false;
+let autonomousReflectionInProgress = false;
+const EXTRACTION_INTERVAL_TURNS = 4;
+const DREAMING_INTERVAL_TURNS = 12;
 
 function getContextIds() {
     const chatId = getCurrentChatId();
@@ -202,7 +207,7 @@ async function captureTurn(messageIndex, role, messageType = '') {
     const ids = getContextIds();
     if (!ids.activeChatId) return;
     try {
-        await requestApi('/capture-turn', {
+        const result = await requestApi('/capture-turn', {
             method: 'POST',
             body: JSON.stringify({
                 activeChatId: ids.activeChatId,
@@ -212,8 +217,83 @@ async function captureTurn(messageIndex, role, messageType = '') {
                 messageKey: String(index) + ':' + role,
             }),
         });
+
+        // Background extraction runs automatically after each small batch of captured
+        // turns. Every third batch performs a wider, same-character dreaming pass.
+        // Neither path requires a tool call, save instruction, or UI action from the user.
+        if (role === 'assistant' && result.captured && !result.duplicate
+            && Number.isInteger(result.capturedCount)
+            && result.capturedCount % EXTRACTION_INTERVAL_TURNS === 0) {
+            const mode = result.capturedCount % DREAMING_INTERVAL_TURNS === 0 ? 'dream' : 'extract';
+            void runAutonomousMemoryPass(mode);
+        }
     } catch (error) {
         console.debug('[SillyAgent memory] Automatic capture skipped:', error);
+    }
+}
+
+/**
+ * Use the current SillyTavern model for silent background extraction/consolidation.
+ * This is deliberately independent of native function calling so memory can be
+ * autonomous even when the model never chooses a memory tool.
+ * @param {'extract'|'dream'} mode Reflection depth.
+ * @returns {Promise<void>}
+ */
+async function runAutonomousMemoryPass(mode = 'extract') {
+    if (autonomousReflectionInProgress) return;
+    const ids = getContextIds();
+    if (!ids.activeChatId) return;
+
+    autonomousReflectionInProgress = true;
+    try {
+        const context = await requestApi('/memory/reflection-context', {
+            method: 'POST',
+            body: JSON.stringify({
+                activeChatId: ids.activeChatId,
+                activeCharacterId: ids.activeCharacterId,
+            }),
+        });
+        const activeChatTurns = (context.turns || []).filter(turn => turn.chatId === context.activeChatId);
+        const turns = mode === 'dream' ? (context.turns || []) : activeChatTurns.slice(-10);
+        if (!turns.length) return;
+
+        const prompt = buildAutonomousExtractionPrompt(turns, context.memories || [], { mode });
+        const responseText = await generateQuietPrompt({
+            quietPrompt: prompt,
+            skipWIAN: true,
+            responseLength: mode === 'dream' ? 700 : 500,
+        });
+        const candidates = parseAutonomousExtraction(responseText, context.memories || [], { mode });
+        let saved = 0;
+
+        for (const candidate of candidates) {
+            const result = await requestApi('/execute', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: 'memory_propose',
+                    activeChatId: ids.activeChatId,
+                    activeCharacterId: ids.activeCharacterId,
+                    arguments: {
+                        content: candidate.content,
+                        kind: candidate.kind,
+                        importance: candidate.importance,
+                        scope: candidate.scope,
+                    },
+                }),
+            });
+            if (result.ok && result.result?.memory) saved++;
+        }
+
+        if (saved > 0) {
+            console.debug('[SillyAgent memory] Autonomous ' + mode + ' saved ' + saved + ' memory record(s).');
+            await refreshPanel();
+        } else {
+            console.debug('[SillyAgent memory] Autonomous ' + mode + ' completed with no new durable memories.');
+        }
+    } catch (error) {
+        console.debug('[SillyAgent memory] Autonomous ' + mode + ' skipped:', error);
+    } finally {
+        autonomousReflectionInProgress = false;
     }
 }
 
