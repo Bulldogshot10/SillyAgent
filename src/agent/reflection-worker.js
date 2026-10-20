@@ -14,7 +14,14 @@ const workers = new WeakMap();
 
 function parseModelJson(raw) {
     if (typeof raw !== 'string' || !raw.trim()) throw new Error('Reflection model returned an empty response.');
-    const unfenced = raw.trim().replace(/^\`\`\`(?:json)?\s*/iu, '').replace(/\s*\`\`\`$/u, '').trim();
+    let unfenced = raw.trim();
+    const fence = String.fromCharCode(96).repeat(3);
+    if (unfenced.startsWith(fence)) {
+        const newline = unfenced.indexOf('\n');
+        unfenced = newline >= 0 ? unfenced.slice(newline + 1) : unfenced.slice(fence.length);
+        if (unfenced.trimEnd().endsWith(fence)) unfenced = unfenced.trimEnd().slice(0, -fence.length);
+        unfenced = unfenced.trim();
+    }
     let value;
     try {
         value = JSON.parse(unfenced);
