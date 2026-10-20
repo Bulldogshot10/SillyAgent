@@ -1089,8 +1089,10 @@ export class MemoryStore {
      * @param {object} input Claim options.
      * @returns {object|null} Claimed job.
      */
-    claimReflectionJob({ scopeId, characterId = null, claimToken = randomUUID(), leaseMs = 300000, now = Date.now() }) {
-        const target = normalizeScope('chat', scopeId);
+    claimReflectionJob({ scopeId = null, characterId = null, claimToken = randomUUID(), leaseMs = 300000, now = Date.now() }) {
+        // A server-owned worker may claim across all character/chat queues. UI
+        // claims stay scoped to the selected character or exact chat.
+        const target = scopeId == null ? null : normalizeScope('chat', scopeId);
         const safeCharacterId = characterId == null ? '' : normalizeText(characterId, 256, 'Character ID');
         const boundedLease = Math.max(30000, Math.min(900000, Number.isInteger(leaseMs) ? leaseMs : 300000));
         if (typeof claimToken !== 'string' || !claimToken.trim() || claimToken.length > 256) {
@@ -1116,10 +1118,15 @@ export class MemoryStore {
                     'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = ? ' +
                     'ORDER BY CASE mode WHEN \'extract\' THEN 0 ELSE 1 END, created_at ASC LIMIT 1',
                 ).get(now, safeCharacterId)
-                : this.#db.prepare(
-                    'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = \'\' AND scope_id = ? ' +
-                    'ORDER BY created_at ASC LIMIT 1',
-                ).get(now, target.scopeId);
+                : target
+                    ? this.#db.prepare(
+                        'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? AND character_id = \'\' AND scope_id = ? ' +
+                        'ORDER BY created_at ASC LIMIT 1',
+                    ).get(now, target.scopeId)
+                    : this.#db.prepare(
+                        'SELECT * FROM memory_reflection_jobs WHERE status = \'pending\' AND available_at <= ? ' +
+                        'ORDER BY CASE mode WHEN \'extract\' THEN 0 ELSE 1 END, created_at ASC LIMIT 1',
+                    ).get(now);
 
             if (!row) {
                 this.#db.exec('COMMIT;');
