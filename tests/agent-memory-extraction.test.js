@@ -1,6 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import {
     buildAutonomousExtractionPrompt,
+    isValidAutonomousExtraction,
     parseAutonomousExtraction,
 } from '../public/scripts/extensions/sillyagent-memory/auto-extraction.js';
 
@@ -67,4 +68,23 @@ describe('autonomous memory extraction', () => {
         expect(result[0].importance).toBe(5);
         expect(result[0].scope).toBe('character');
     });
+    test('validates structured output and distinguishes an empty result from a failed reflection', () => {
+        expect(isValidAutonomousExtraction('{"memories":[]}')).toBe(true);
+        expect(isValidAutonomousExtraction('```json\n{"memories":[]}\n```')).toBe(true);
+        expect(isValidAutonomousExtraction('the model did not respond')).toBe(false);
+        expect(isValidAutonomousExtraction('{"memory":[]}')).toBe(false);
+    });
+
+    test('dreaming prompt requests synthesis across a longer same-character history', () => {
+        const turns = Array.from({ length: 90 }, (_, index) => ({
+            role: index % 2 ? 'assistant' : 'user',
+            chatId: index < 45 ? 'chat-a' : 'chat-b',
+            content: 'Turn ' + index + ' about the ongoing project.',
+        }));
+        const prompt = buildAutonomousExtractionPrompt(turns, [], { mode: 'dream' });
+        expect(prompt).toContain('DREAMING / long-horizon consolidation');
+        expect(prompt).toContain('"chatId":"chat-b"');
+        expect(prompt).toContain('Return at most 5 candidates');
+    });
+
 });
