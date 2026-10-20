@@ -399,7 +399,6 @@ enableServerPluginsAutoUpdate: true
 agentTools:
   # Allow agent-managed skills to be created, improved, and rolled back by tools.
   skillWritesEnabled: true
-  # Require human approval before a proposed skill revision becomes active.
-  skillsRequireApproval: false
+  # To enforce review globally, add skillsRequireApproval: true. Per-user API settings are used otherwise.
   # Allow the existing memory-proposal write tool.
   memoryProposalsEnabled: true

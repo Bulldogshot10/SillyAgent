@@ -57,9 +57,14 @@ async function getSkillStore(request) {
 
 function getEffectiveSkillSettings(store) {
     const settings = store.getSettings();
+    const configured = getConfigValue('agentTools.skillsRequireApproval', null);
+    const environmentOverride = process.env.SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL !== undefined;
+    const configOverride = typeof configured === 'boolean';
     return {
         ...settings,
-        requireApproval: !!getConfigValue('agentTools.skillsRequireApproval', settings.requireApproval, 'boolean'),
+        requireApproval: environmentOverride || configOverride
+            ? !!getConfigValue('agentTools.skillsRequireApproval', false, 'boolean')
+            : settings.requireApproval,
     };
 }
 
@@ -523,9 +528,7 @@ router.post('/execute', async (request, response) => {
             source: 'agent-tools-api',
             memoryStore,
             skillStore,
-            requireSkillApproval: skillStore
-                ? !!getConfigValue('agentTools.skillsRequireApproval', skillStore.getSettings().requireApproval, 'boolean')
-                : false,
+            requireSkillApproval: skillStore ? getEffectiveSkillSettings(skillStore).requireApproval : false,
             activeChatId: getSafeContextId(body.activeChatId),
             activeCharacterId: getSafeContextId(body.activeCharacterId),
         },
