@@ -1,35 +1,25 @@
 # Autonomous persistent memory and dreaming
 
-SillyAgent's persistent-memory loop is autonomous by default. Each user's memory store lives at `data/sillyagent/memory.sqlite`.
+SillyAgent's memory loop is autonomous by default. Each SillyTavern user has a persistent SQLite store at `data/sillyagent/memory.sqlite`.
 
-## Default behavior
+## Automatic lifecycle
 
-- Automatic retrieval is enabled.
-- User and assistant turns are captured into the active chat's event history.
-- Dreaming runs every 12 newly captured turns and looks for recurring topics.
-- New memory proposals are accepted immediately and become searchable by retrieval.
-- Human review is optional and disabled by default.
+- User and assistant turns are captured automatically into the active chat's event history.
+- Relevant approved memories are retrieved and injected before a response.
+- Dreaming runs automatically every 12 newly captured turns and scans the current chat for recurring topics.
+- Native function calling is enabled by the SillyAgent Memory extension for supported Chat Completion providers. The registered SillyAgent tools are offered automatically with `tool_choice: "auto"`.
+- The model is instructed to search memory when relevant and call `sillyagent_memory_propose` proactively for durable facts, preferences, goals, relationship continuity, and other useful information.
+- The model determines scope without user intervention: `user` for stable information about the user, `character` for character identity/backstory/continuity, and `chat` for transient session or task context. The server infers a fallback scope when a tool call omits one.
+- New memory writes are accepted automatically. Legacy pending proposals are automatically accepted when the autonomous lifecycle initializes.
 
-Captured raw turns and accepted long-term memories are separate. Clearing captured history removes the raw turn events for a chat while preserving accepted memories. Memory records remain scoped to user, character, or chat and search respects those boundaries.
+The memory panel does not expose toggles for automation, an approval queue, a manual dreaming button, or a scope picker. It lists accepted memories from all scopes in one view. Refresh only reloads the display; it does not trigger dreaming.
 
-## Optional human review
+Captured raw turns and accepted memories remain separate. Clearing captured history removes only captured user/assistant turn events for the active chat; it keeps accepted memories. Dreaming v1 is a deterministic recurring-topic detector scoped to the current chat. Cross-chat user and character memories are created through the autonomous tool-calling path, which uses model judgement and the scope policy above. The engine does not yet perform independent factual verification or rewrite its own source code.
 
-Enable review for new memories with:
+## Provider compatibility
 
-`POST /api/agent/tools/memory/settings`
+Automatic native function calling applies when SillyTavern is using Chat Completion with a provider/model supported by its ToolManager, including Google AI Studio/MakerSuite and compatible OpenAI-style endpoints that implement tool calls. On a provider or completion mode without native tool-call support, automatic capture, retrieval, and periodic dreaming still run, but the model cannot execute the registered function tools.
 
-JSON body:
+## API compatibility
 
-`{"requireApproval": true}`
-
-When enabled, new memory and dreaming proposals remain pending and are excluded from retrieval until approved. Return to autonomous mode with `{"requireApproval": false}`. Pending proposals created under the earlier review-only behavior are automatically accepted when the settings endpoint observes that review is disabled, including a settings change back to autonomous mode.
-
-The effective setting can be checked with `GET /api/agent/tools/memory/settings`. A global override can be set with `SILLYTAVERN_AGENTTOOLS_MEMORYREQUIRESAPPROVAL=true` or `false`. When unset, the per-user setting applies.
-
-The separate `SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED=false` environment variable disables memory write tools while leaving retrieval available.
-
-## Dreaming flow
-
-The deterministic v1 dreaming engine analyzes captured turns within a single chat, identifies recurring topics, and stores reviewable/accepted memory candidates through the same policy as regular agent memory writes. It does not mix evidence across chats. Repeated dreams do not create duplicates when the same candidate is already accepted or pending.
-
-Dreaming currently consolidates recurring topics into memories. It does not yet autonomously rewrite the agent's own source code or run model-based evaluations of whether a memory is factually correct. That can be layered onto this lifecycle separately.
+The memory settings and proposal review endpoints remain for compatibility with existing installs. The effective lifecycle forces capture, retrieval, and dreaming on and disables human approval; stored legacy opt-outs do not disable these features. The `SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED=false` environment variable can still disable memory write tools for an operator who explicitly wants writes disabled.
