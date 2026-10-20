@@ -463,6 +463,15 @@ router.post('/retrieve-context', async (request, response) => {
     }
 });
 
+router.get('/memory/reflection-jobs/status', async (request, response) => {
+    try {
+        const store = await getMemoryStore(request);
+        return response.json({ jobs: store.getReflectionJobSummary() });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
 router.post('/memory/reflection-jobs/claim', async (request, response) => {
     const activeChatId = getSafeContextId(request.body?.activeChatId);
     const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
