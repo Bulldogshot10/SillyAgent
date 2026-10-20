@@ -4,17 +4,18 @@ SillyAgent's memory loop is autonomous by default. Each SillyTavern user has a p
 
 ## Automatic lifecycle
 
-- User and assistant turns are captured automatically into the active chat's event history.
-- Relevant approved memories are retrieved and injected before a response.
-- Dreaming runs automatically every 12 newly captured turns. It scans the active chat and a bounded window of recent captured turns across chats.
-- Native function calling is enabled by the SillyAgent Memory extension for supported Chat Completion providers. The registered SillyAgent tools are offered automatically with `tool_choice: "auto"`.
-- The model is instructed to search memory when relevant and call `sillyagent_memory_propose` proactively for durable facts, preferences, goals, relationship continuity, and other useful information.
-- The model determines scope without user intervention. Every durable memory, including facts/preferences about the user, is stored inside the active character's own partition. Character identity/backstory/relationship continuity uses that same character partition; transient task/session context stays in the current chat. No global user memory is used in automatic retrieval.
-- New memory writes are accepted automatically. Legacy pending proposals are automatically accepted when the autonomous lifecycle initializes.
+- Every user and assistant turn is captured automatically into a durable SQLite event log.
+- The backend queues a reflection job after every four captured turns. Every third batch is a deeper dreaming pass; ordinary batches perform low-cost extraction. Queue rows, attempts, leases, completion, and failures persist in SQLite.
+- The SillyTavern extension drains the queue in the background using the currently configured model's quiet-generation API. It does not depend on a user saying "remember this" or on the model voluntarily calling a memory tool. If a provider request fails, the job is retried with backoff up to three attempts. Pending jobs survive a browser or backend restart and are drained when the extension next becomes active.
+- Routine extraction reviews the latest turns of the job's chat. Dreaming reviews a bounded set of captured turns from the same active character across chats, synthesizing durable patterns rather than simply storing repeated keywords.
+- The model returns structured JSON candidates; the extension validates the shape, bounds candidate counts and lengths, skips exact duplicates, rejects obvious credential patterns, and then submits accepted writes through the same scoped memory-store API used by the tool harness.
+- Relevant accepted memories are retrieved and injected before a response. Native tool calling is enabled for supported Chat Completion providers, but autonomous extraction and dreaming do not rely on the model choosing to call a memory tool during the user-facing reply.
+- The model does not select a global user scope. Durable user facts/preferences/goals and character identity/backstory/relationship continuity live inside the active character partition; temporary task/session context may live in the current chat. Different characters' evidence is filtered before reflection.
 
-The memory panel does not expose toggles for automation, an approval queue, a manual dreaming button, or a scope picker. It automatically lists accepted memories for the active character and current chat only. Refresh only reloads the display; it does not trigger dreaming.
+The panel reports accepted memories, pending proposals, captured events, and reflection queue state. Refresh only reloads the display; it does not enqueue or execute work. The UI does not expose a manual dreaming button, a scope picker, or ordinary-memory approval actions.
 
-Captured raw turns and accepted memories remain separate. Clearing captured history removes only captured user/assistant turn events for the active chat; it keeps accepted memories. Dreaming v2 detects recurring topics in the active chat plus a bounded cross-chat history window restricted to the active character ID. A topic repeated only within one chat stays chat-scoped; repetition across several chats belonging to the same character becomes character-scoped. Evidence from any other character is excluded before consolidation, and dreaming never writes to a global user scope. The model-driven memory tools store durable user facts/preferences and character canon/continuity inside that active character's partition, while task-local context stays chat-scoped. The engine does not yet perform independent factual verification or rewrite its own source code.
+Captured raw turns and accepted memories remain separate. Clearing captured history removes only captured user/assistant turn events for the active chat; it keeps accepted memories. The older deterministic topic detector remains available as a testable engine, but the production auto-consolidation path uses model-generated reflection candidates. The harness currently uses the browser-side SillyTavern provider API to perform inference; while the browser is unavailable, durable jobs wait in SQLite and resume when the extension comes back. A fully headless Node-side inference worker would need an explicit server-side provider adapter and secure provider-credential handling, and is not claimed by this implementation slice.
+
 
 ## Legacy memory migration
 
