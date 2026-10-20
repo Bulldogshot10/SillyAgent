@@ -4,6 +4,8 @@ import express from 'express';
 
 import { MemoryStore } from '../agent/memory-store.js';
 import { SkillStore } from '../agent/skill-store.js';
+import { startReflectionWorker } from '../agent/reflection-worker.js';
+import { getReflectionProviderState, saveReflectionProviderConfig } from '../agent/reflection-provider.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
 import { registerSkillTools } from '../agent/skill-tools.js';
 import { toolRegistry } from '../agent/tool-registry.js';
@@ -56,7 +58,14 @@ async function getMemoryStore(request) {
         memoryStores.set(databasePath, opening);
         opening.catch(() => memoryStores.delete(databasePath));
     }
-    return await memoryStores.get(databasePath);
+    const store = await memoryStores.get(databasePath);
+    const directories = request.user?.directories ?? { root };
+    startReflectionWorker({
+        store,
+        directories,
+        getSkillStore: () => getSkillStore({ user: { directories } }),
+    });
+    return store;
 }
 
 async function getSkillStore(request) {
@@ -460,6 +469,33 @@ router.post('/retrieve-context', async (request, response) => {
         return response.json({ enabled: true, memories: results });
     } catch (error) {
         return sendMemoryError(response, error);
+    }
+});
+
+router.get('/memory/reflection-provider', async (request, response) => {
+    try {
+        const directories = request.user?.directories;
+        const provider = getReflectionProviderState(directories);
+        return response.json({ provider });
+    } catch (error) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'reflection_provider_unavailable', message: error?.message || 'Reflection provider settings are unavailable.' },
+        });
+    }
+});
+
+router.post('/memory/reflection-provider', async (request, response) => {
+    try {
+        const directories = request.user?.directories;
+        const provider = saveReflectionProviderConfig(directories?.root, request.body ?? {});
+        const state = getReflectionProviderState(directories);
+        return response.json({ ok: true, provider: state });
+    } catch (error) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'invalid_reflection_provider', message: error?.message || 'Reflection provider settings were invalid.' },
+        });
     }
 });
 
