@@ -4,7 +4,6 @@ import express from 'express';
 
 import { MemoryStore } from '../agent/memory-store.js';
 import { SkillStore } from '../agent/skill-store.js';
-import { DreamingEngine } from '../agent/dreaming.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
 import { registerSkillTools } from '../agent/skill-tools.js';
 import { toolRegistry } from '../agent/tool-registry.js';
@@ -464,6 +463,112 @@ router.post('/retrieve-context', async (request, response) => {
     }
 });
 
+router.get('/memory/reflection-jobs/status', async (request, response) => {
+    try {
+        const store = await getMemoryStore(request);
+        const jobs = store.listReflectionJobs({ limit: 100 }).map(({ claimToken, ...job }) => job);
+        return response.json({ jobs: store.getReflectionJobSummary(), recent: jobs });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
+router.post('/memory/reflection-jobs/claim', async (request, response) => {
+    const activeChatId = getSafeContextId(request.body?.activeChatId);
+    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
+    if (!activeChatId) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_chat_id', message: 'Claiming a reflection job requires an active chat.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        const job = store.claimReflectionJob({
+            scopeId: getScopedChatId(activeChatId, activeCharacterId),
+            characterId: activeCharacterId,
+        });
+        return response.json({ ok: true, job });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
+router.post('/memory/reflection-context', async (request, response) => {
+    const activeChatId = getSafeContextId(request.body?.activeChatId);
+    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
+    const mode = request.body?.mode === 'dream' ? 'dream' : 'extract';
+    if (!activeChatId) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_chat_id', message: 'Reflection context requires an active chat.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        const scopedChatId = getScopedChatId(activeChatId, activeCharacterId);
+        const eventTypes = ['chat.user_turn', 'chat.assistant_turn'];
+        const events = mode === 'dream' && activeCharacterId
+            ? store.listCapturedTurnsAcrossChats({ limit: 2000 })
+                .filter(event => event.metadata?.characterId === activeCharacterId)
+            : store.listEvents({ scope: 'chat', scopeId: scopedChatId, eventTypes, limit: 100 });
+        const turns = events.slice(-100).map(event => ({
+            id: event.id,
+            chatId: event.scopeId,
+            role: event.metadata?.role === 'assistant' || event.eventType === 'chat.assistant_turn' ? 'assistant' : 'user',
+            content: event.content,
+            createdAt: event.createdAt,
+        }));
+        return response.json({
+            ok: true,
+            activeChatId: scopedChatId,
+            activeCharacterId,
+            mode,
+            turns,
+        });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
+router.post('/memory/reflection-jobs/:id/complete', async (request, response) => {
+    const claimToken = request.body?.claimToken;
+    if (typeof claimToken !== 'string' || !claimToken.trim()) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_claim_token', message: 'A reflection job claim token is required.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        const completed = store.completeReflectionJob(request.params.id, claimToken);
+        return response.status(completed ? 200 : 409).json({ ok: completed, completed });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
+router.post('/memory/reflection-jobs/:id/fail', async (request, response) => {
+    const claimToken = request.body?.claimToken;
+    if (typeof claimToken !== 'string' || !claimToken.trim()) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_claim_token', message: 'A reflection job claim token is required.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        const failed = store.failReflectionJob(
+            request.params.id,
+            claimToken,
+            String(request.body?.error ?? 'Reflection failed.').slice(0, 500),
+        );
+        return response.status(failed ? 200 : 409).json({ ok: failed, failed });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
 router.post('/capture-turn', async (request, response) => {
     const body = request.body ?? {};
     const activeChatId = getSafeContextId(body.activeChatId);
@@ -494,15 +599,19 @@ router.post('/capture-turn', async (request, response) => {
             metadata: { characterId: activeCharacterId, messageKey: body.messageKey },
         });
         const capturedCount = store.countCapturedTurns(scopedChatId);
-        let dreaming = null;
-        if (!captured.duplicate && settings.autoDreamEnabled && capturedCount > 0 && capturedCount % 12 === 0) {
-            dreaming = new DreamingEngine(store).run({
+        let queuedReflection = null;
+        if (!captured.duplicate && settings.autoDreamEnabled && capturedCount > 0 && capturedCount % 4 === 0) {
+            const mode = capturedCount % 12 === 0 ? 'dream' : 'extract';
+            queuedReflection = store.enqueueReflectionJob({
                 scopeId: scopedChatId,
-                activeCharacterId,
-                requireApproval: settings.requireApproval,
+                chatId: activeChatId,
+                characterId: activeCharacterId,
+                mode,
+                triggerEventId: captured.event.id,
+                triggerCount: capturedCount,
             });
         }
-        return response.json({ captured: true, duplicate: captured.duplicate, capturedCount, dreaming });
+        return response.json({ captured: true, duplicate: captured.duplicate, capturedCount, queuedReflection });
     } catch (error) {
         return sendMemoryError(response, error);
     }
