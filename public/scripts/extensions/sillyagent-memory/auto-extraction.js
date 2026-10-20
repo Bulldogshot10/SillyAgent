@@ -80,9 +80,7 @@ export function buildAutonomousExtractionPrompt(messages, existingMemories = [],
  */
 export function isValidAutonomousExtraction(responseText) {
     if (typeof responseText !== 'string' || !responseText.trim()) return false;
-    const text = responseText.trim()
-        .replace(/^\`\`\`(?:json)?\s*/iu, '')
-        .replace(/\s*\`\`\`$/u, '');
+    const text = stripCodeFence(responseText);
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
     if (start < 0 || end < start) return false;
@@ -104,9 +102,7 @@ export function isValidAutonomousExtraction(responseText) {
 export function parseAutonomousExtraction(responseText, existingMemories = [], { mode = 'extract' } = {}) {
     if (typeof responseText !== 'string' || !responseText.trim()) return [];
 
-    const text = responseText.trim()
-        .replace(/^\`\`\`(?:json)?\s*/iu, '')
-        .replace(/\s*\`\`\`$/u, '');
+    const text = stripCodeFence(responseText);
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
     if (start < 0 || end < start) return [];
@@ -143,6 +139,13 @@ export function parseAutonomousExtraction(responseText, existingMemories = [], {
     }
 
     return candidates;
+}
+
+function stripCodeFence(responseText) {
+    const lines = responseText.trim().split(/\r?\n/u);
+    if (lines[0]?.trim().startsWith('```')) lines.shift();
+    if (lines.length && lines[lines.length - 1].trim() === '```') lines.pop();
+    return lines.join('\n').trim();
 }
 
 function normalizeMemory(content) {
