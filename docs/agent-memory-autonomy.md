@@ -6,7 +6,7 @@ SillyAgent's memory loop is autonomous by default. Each SillyTavern user has a p
 
 - User and assistant turns are captured automatically into the active chat's event history.
 - Relevant approved memories are retrieved and injected before a response.
-- Dreaming runs automatically every 12 newly captured turns and scans the current chat for recurring topics.
+- Dreaming runs automatically every 12 newly captured turns. It scans the active chat and a bounded window of recent captured turns across chats.
 - Native function calling is enabled by the SillyAgent Memory extension for supported Chat Completion providers. The registered SillyAgent tools are offered automatically with `tool_choice: "auto"`.
 - The model is instructed to search memory when relevant and call `sillyagent_memory_propose` proactively for durable facts, preferences, goals, relationship continuity, and other useful information.
 - The model determines scope without user intervention: `user` for stable information about the user, `character` for character identity/backstory/continuity, and `chat` for transient session or task context. The server infers a fallback scope when a tool call omits one.
@@ -14,7 +14,7 @@ SillyAgent's memory loop is autonomous by default. Each SillyTavern user has a p
 
 The memory panel does not expose toggles for automation, an approval queue, a manual dreaming button, or a scope picker. It lists accepted memories from all scopes in one view. Refresh only reloads the display; it does not trigger dreaming.
 
-Captured raw turns and accepted memories remain separate. Clearing captured history removes only captured user/assistant turn events for the active chat; it keeps accepted memories. Dreaming v1 is a deterministic recurring-topic detector scoped to the current chat. Cross-chat user and character memories are created through the autonomous tool-calling path, which uses model judgement and the scope policy above. The engine does not yet perform independent factual verification or rewrite its own source code.
+Captured raw turns and accepted memories remain separate. Clearing captured history removes only captured user/assistant turn events for the active chat; it keeps accepted memories. Dreaming v2 detects recurring topics in a bounded cross-chat history window. A topic repeated only within one chat stays chat-scoped; repetition across several chats associated with the same character becomes character-scoped; repetition across different characters becomes user-scoped. The model-driven memory tools additionally store durable user facts and preferences, character canon/continuity, and task-local context as those emerge in normal conversations. The engine does not yet perform independent factual verification or rewrite its own source code.
 
 ## Provider compatibility
 
