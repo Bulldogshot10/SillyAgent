@@ -17,7 +17,7 @@ const AUTONOMOUS_MEMORY_MARKER = '[SILLYAGENT_AUTONOMOUS_MEMORY_V1]';
 const AUTONOMOUS_MEMORY_INSTRUCTIONS = [
     AUTONOMOUS_MEMORY_MARKER,
     'Use SillyAgent memory tools autonomously. Never ask the user to select a memory scope, approve ordinary memories, or manually trigger a memory operation.',
-    'Call sillyagent_memory_search when prior facts are relevant and not already available in the injected context. Save durable information as soon as it emerges, without waiting for the user to ask: stable user facts, preferences, and long-term goals belong in user scope; this character’s identity, backstory, and character-specific relationship continuity belong in character scope; temporary task, debugging, or current conversation state belongs in chat scope.',
+    'Call sillyagent_memory_search when prior facts are relevant and not already available in the injected context. Save durable information as soon as it emerges, without waiting for the user to ask. All persistent memory is isolated per active character: stable facts about the user, preferences, and long-term goals are stored inside this character’s own memory partition, alongside this character’s identity, backstory, and relationship continuity. Temporary task, debugging, or current conversation state belongs to the current chat. Never share memories or dreaming evidence across different characters.',
     'Use sillyagent_memory_propose with a concise, self-contained memory and an appropriate kind/importance. The scope is optional when unclear because the server will infer it. Avoid duplicates, one-off trivia, credentials, secrets, and unnecessary sensitive detail.',
     'Let memory operations happen in the background and continue answering the user naturally. Do not announce routine memory writes unless relevant to the conversation.',
 ].join(' ');
@@ -113,9 +113,32 @@ async function refreshPanel() {
 }
 
 async function loadAcceptedMemories() {
-    const params = new URLSearchParams({ scope: 'all', limit: '100' });
-    const payload = await requestApi('/memory/list?' + params.toString());
-    renderMemoryList(payload.memories || []);
+    const ids = getContextIds();
+    const requests = [];
+
+    // The panel follows the active context automatically. It never lists another
+    // character's stored memories or a legacy global user pool.
+    if (ids.activeCharacterId) {
+        const characterParams = new URLSearchParams({
+            scope: 'character',
+            scopeId: ids.activeCharacterId,
+            limit: '100',
+        });
+        requests.push(requestApi('/memory/list?' + characterParams.toString()));
+    }
+    if (ids.activeChatId) {
+        const chatParams = new URLSearchParams({
+            scope: 'chat',
+            scopeId: ids.activeChatId,
+            limit: '100',
+        });
+        requests.push(requestApi('/memory/list?' + chatParams.toString()));
+    }
+
+    const payloads = await Promise.all(requests);
+    const memories = payloads.flatMap(payload => payload.memories || []);
+    const uniqueMemories = [...new Map(memories.map(memory => [memory.id, memory])).values()];
+    renderMemoryList(uniqueMemories);
 }
 
 async function deleteMemory(id) {
