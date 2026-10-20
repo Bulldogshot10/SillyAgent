@@ -125,7 +125,8 @@ function applyMemoryCandidates(store, job, candidates, events, existingMemories)
     for (const candidate of candidates) {
         if (!validString(candidate?.content, 4000) || containsCredential(candidate.content)
             || !validEvidenceIds(candidate, evidenceIds) || !ALLOWED_KINDS.has(candidate.kind)
-            || !['character', 'chat'].includes(candidate.scope)) continue;
+            || !['character', 'chat'].includes(candidate.scope)
+            || (candidate.scope === 'character' && !job.characterId)) continue;
         const target = candidateMemoryScope(candidate, job);
         if (!target.scopeId) continue;
         const supersedesIds = candidate.supersedesMemoryIds === undefined ? [] : candidate.supersedesMemoryIds;
