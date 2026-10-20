@@ -282,12 +282,15 @@ router.get('/skills/:slug', async (request, response) => {
 
 
 router.get('/memory/proposals', async (request, response) => {
+    const activeCharacterId = getSafeContextId(request.query.activeCharacterId);
+    const activeChatId = getSafeContextId(request.query.activeChatId);
+    const scopedChatId = getScopedChatId(activeChatId, activeCharacterId);
     try {
         const store = await getMemoryStore(request);
-        return response.json({
-            proposals: store.listProposals({ status: 'pending', limit: 100 }),
-            summary: store.getSummary(),
-        });
+        const proposals = store.listProposals({ status: 'pending', limit: 100 }).filter(proposal =>
+            (activeCharacterId && proposal.scope === 'character' && proposal.scopeId === activeCharacterId)
+            || (scopedChatId && proposal.scope === 'chat' && proposal.scopeId === scopedChatId));
+        return response.json({ proposals, summary: store.getSummary() });
     } catch (error) {
         return sendMemoryError(response, error);
     }
@@ -340,23 +343,41 @@ router.post('/memory/settings', async (request, response) => {
 });
 
 router.get('/memory/list', async (request, response) => {
-    const scope = typeof request.query.scope === 'string' ? request.query.scope : 'all';
+    const requestedScope = typeof request.query.scope === 'string' ? request.query.scope : 'character';
     const rawScopeId = getSafeContextId(request.query.scopeId);
     const activeChatId = getSafeContextId(request.query.activeChatId);
     const activeCharacterId = getSafeContextId(request.query.activeCharacterId);
-    const scopeId = ['user', 'all'].includes(scope)
-        ? ''
-        : scope === 'chat' && activeChatId
-            ? getScopedChatId(activeChatId, activeCharacterId)
-            : rawScopeId;
-    const query = typeof request.query.query === 'string' ? request.query.query : '';
-    const limit = Number.parseInt(request.query.limit, 10);
-    if (!['user', 'all'].includes(scope) && !scopeId) {
+    let scope = requestedScope;
+    let scopeId = rawScopeId;
+
+    // Legacy user/all listing must never reveal other character partitions.
+    if (requestedScope === 'user') {
+        scope = 'character';
+        scopeId = activeCharacterId;
+    } else if (requestedScope === 'all') {
         return response.status(400).json({
             ok: false,
-            error: { code: 'missing_scope_id', message: 'Character and chat lists require an active scope ID.' },
+            error: { code: 'character_scope_required', message: 'Memory listing must be scoped to the active character or chat.' },
+        });
+    } else if (requestedScope === 'chat') {
+        scopeId = getScopedChatId(activeChatId, activeCharacterId);
+    }
+
+    if (!['character', 'chat'].includes(scope) || !scopeId) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_scope_id', message: 'Memory lists require an active character or exact active chat.' },
         });
     }
+    if (scope === 'character' && activeCharacterId && scopeId !== activeCharacterId) {
+        return response.status(403).json({
+            ok: false,
+            error: { code: 'character_scope_mismatch', message: 'A character can only list its own memory partition.' },
+        });
+    }
+
+    const query = typeof request.query.query === 'string' ? request.query.query : '';
+    const limit = Number.parseInt(request.query.limit, 10);
     try {
         const store = await getMemoryStore(request);
         return response.json({
