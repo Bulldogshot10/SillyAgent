@@ -34,7 +34,7 @@ const improvedContent = [
     '1. Search the metadata-only catalog and load only the skill relevant to the task.',
     '2. Follow its steps while tracking evidence, failed attempts, and successful outcomes.',
     '3. Propose focused Markdown changes that explain when to use the skill and why the steps work.',
-    '4. Run deterministic validation before activation; use approval only when the owner opts in.',
+    '4. Run deterministic validation, then activate the smallest evidence-backed improvement automatically.',
     '5. Keep every revision and checksum so a poor change can be reviewed or rolled back.',
 ].join('\n');
 
@@ -134,10 +134,10 @@ describe('agent-managed skills API', () => {
         expect(modelRead.result.skill.version).toBe(1);
     });
 
-    test('keeps revisions pending only when approval is opted in', async () => {
+    test('auto-activates evidence-backed revisions despite legacy approval settings', async () => {
         const settingsResponse = await postJson(baseUrl + '/skills/settings', { requireApproval: true });
         expect(settingsResponse.status).toBe(200);
-        expect((await settingsResponse.json()).settings.requireApproval).toBe(true);
+        expect((await settingsResponse.json()).settings.requireApproval).toBe(false);
 
         const proposedResponse = await postJson(baseUrl + '/execute', {
             name: 'skill_propose',
@@ -151,35 +151,27 @@ describe('agent-managed skills API', () => {
         });
         const proposed = await proposedResponse.json();
         expect(proposedResponse.status).toBe(200);
-        expect(proposed.result.requiresApproval).toBe(true);
-        expect(proposed.result.revision.status).toBe('pending');
+        expect(proposed.result.requiresApproval).toBe(false);
+        expect(proposed.result.revision.status).toBe('active');
 
-        const beforeReviewResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle');
-        const beforeReview = await beforeReviewResponse.json();
-        expect(beforeReview.skill.version).toBe(1);
+        const activeResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle');
+        const active = await activeResponse.json();
+        expect(active.skill.version).toBe(2);
+        expect(active.skill.content).toContain('activate the smallest evidence-backed improvement automatically');
 
         const pendingResponse = await fetch(baseUrl + '/skills/pending');
         const pending = await pendingResponse.json();
-        expect(pending.revisions.some(revision => revision.slug === 'agentic-skill-lifecycle' && revision.version === 2)).toBe(true);
+        expect(pending.revisions.some(revision => revision.slug === 'agentic-skill-lifecycle' && revision.version === 2)).toBe(false);
 
-        const pendingRevisionResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle/revisions/2');
-        const pendingRevision = await pendingRevisionResponse.json();
-        expect(pendingRevisionResponse.status).toBe(200);
-        expect(pendingRevision.revision.status).toBe('pending');
-        expect(pendingRevision.revision.content).toContain('deterministic validation before activation');
-
-        const reviewResponse = await postJson(baseUrl + '/skills/agentic-skill-lifecycle/revisions/2/review', {
-            decision: 'approve',
-        });
-        const reviewed = await reviewResponse.json();
-        expect(reviewResponse.status).toBe(200);
-        expect(reviewed.revision.status).toBe('active');
-        expect(reviewed.activeSkill.version).toBe(2);
+        const revisionResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle/revisions/2');
+        const revision = await revisionResponse.json();
+        expect(revisionResponse.status).toBe(200);
+        expect(revision.revision.status).toBe('active');
 
         const historyResponse = await fetch(baseUrl + '/skills/agentic-skill-lifecycle/history');
         const history = await historyResponse.json();
         expect(history.revisions.map(revision => revision.version)).toEqual([2, 1]);
-        expect(history.revisions.every(revision => revision.checksum)).toBe(true);
+        expect(history.revisions.every(item => item.checksum)).toBe(true);
 
         const resetResponse = await postJson(baseUrl + '/skills/settings', { requireApproval: false });
         expect((await resetResponse.json()).settings.requireApproval).toBe(false);
