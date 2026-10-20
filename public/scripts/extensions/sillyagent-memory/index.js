@@ -102,12 +102,18 @@ async function refreshPanel() {
     try {
         await requestApi('/memory/settings');
         const proposalResponse = await requestApi('/memory/proposals');
+        const queueResponse = await requestApi('/memory/reflection-jobs/status');
         const summary = proposalResponse.summary || {};
+        const jobs = queueResponse.jobs || {};
         const stats = document.getElementById('sa_memory_summary');
         if (stats) {
             stats.textContent = 'accepted ' + (summary.acceptedMemories ?? 0)
                 + ' · pending ' + (summary.pendingProposals ?? 0)
-                + ' · events ' + (summary.events ?? 0);
+                + ' · events ' + (summary.events ?? 0)
+                + ' · reflection queue ' + (jobs.pending ?? 0) + ' queued'
+                + ' / ' + (jobs.running ?? 0) + ' running'
+                + ' / ' + (jobs.completed ?? 0) + ' completed'
+                + ((jobs.failed ?? 0) ? ' / ' + jobs.failed + ' failed' : '');
         }
         await loadAcceptedMemories();
         setStatus('Memory state refreshed.');
