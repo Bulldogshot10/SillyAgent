@@ -369,7 +369,7 @@ router.get('/memory/list', async (request, response) => {
             error: { code: 'missing_scope_id', message: 'Memory lists require an active character or exact active chat.' },
         });
     }
-    if (scope === 'character' && activeCharacterId && scopeId !== activeCharacterId) {
+    if (scope === 'character' && (!activeCharacterId || scopeId !== activeCharacterId)) {
         return response.status(403).json({
             ok: false,
             error: { code: 'character_scope_mismatch', message: 'A character can only list its own memory partition.' },
