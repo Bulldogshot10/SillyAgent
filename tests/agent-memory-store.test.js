@@ -635,10 +635,10 @@ describe('MemoryStore', () => {
             scopeId: 'character-chat-a',
             characterId: 'char-a.png',
             claimToken: 'claim-3',
-            now: 50000,
+            now: 50001,
         });
         expect(third.attempts).toBe(3);
-        expect(store.failReflectionJob(third.id, 'claim-3', 'persistent provider failure', 50001)).toBe(true);
+        expect(store.failReflectionJob(third.id, 'claim-3', 'persistent provider failure', 50002)).toBe(true);
         expect(store.listReflectionJobs({ status: 'failed' })).toHaveLength(1);
     });
 
