@@ -36,7 +36,7 @@ function getCharacterId(event) {
 function inferDreamScope(evidence, activeChatId) {
     const chatIds = new Set(evidence.map(event => event.scopeId).filter(Boolean));
     if (chatIds.size <= 1) {
-        return { scope: 'chat', scopeId: activeChatId, chatCount: chatIds.size };
+        return { scope: 'chat', scopeId: [...chatIds][0] || activeChatId, chatCount: chatIds.size };
     }
 
     const characterIds = evidence.map(getCharacterId);
