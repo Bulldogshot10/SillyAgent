@@ -381,6 +381,12 @@ describe('agent tools API', () => {
         expect(retrieval.enabled).toBe(true);
         expect(retrieval.memories.some(item => item.content === 'A brass telescope belongs in the attic.')).toBe(true);
 
+        const summaryBefore = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
+        const juliaSummaryBefore = (await summaryBefore.json()).summary;
+        const summaryAfter = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
+        const juliaSummaryAfter = (await summaryAfter.json()).summary;
+        expect(juliaSummaryAfter).toEqual(juliaSummaryBefore);
+
         const otherProposalResponse = await postJson(baseUrl + '/execute', {
             activeChatId: 'bella-chat-test',
             activeCharacterId: 'bella-card.png',
@@ -390,12 +396,6 @@ describe('agent tools API', () => {
         const otherProposal = await otherProposalResponse.json();
         expect(otherProposal.result.memory.scope).toBe('character');
         expect(otherProposal.result.memory.scopeId).toBe('bella-card.png');
-
-        const summaryBefore = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
-        const juliaSummaryBefore = (await summaryBefore.json()).summary;
-        const summaryAfter = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
-        const juliaSummaryAfter = (await summaryAfter.json()).summary;
-        expect(juliaSummaryAfter).toEqual(juliaSummaryBefore);
 
         const crossCharacterDelete = await fetch(
             baseUrl + '/memory/' + encodeURIComponent(otherProposal.result.memory.id)
