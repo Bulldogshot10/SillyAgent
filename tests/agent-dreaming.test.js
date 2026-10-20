@@ -81,7 +81,7 @@ describe('DreamingEngine', () => {
             metadata: { characterId: 'julia.png' },
         }));
 
-        const dream = new DreamingEngine(memoryStore).run({ scopeId: 'julia-chat-2' });
+        const dream = new DreamingEngine(memoryStore).run({ scopeId: 'julia-chat-2', activeCharacterId: 'julia.png' });
         const memories = memoryStore.listMemories({ scope: 'all' });
         expect(dream.globalEventsReviewed).toBe(3);
         expect(memories.some(memory => memory.scope === 'character'
@@ -90,7 +90,7 @@ describe('DreamingEngine', () => {
     });
 
 
-    test('automatically uses user scope when a topic recurs across different characters', async () => {
+    test('never combines recurring topics across different characters', async () => {
         const memoryStore = await createStore();
         const turns = [
             { chatId: 'julia-chat', characterId: 'julia.png', content: 'We keep discussing the silver key mystery.' },
@@ -101,15 +101,18 @@ describe('DreamingEngine', () => {
             scopeId: turn.chatId,
             role: 'user',
             content: turn.content,
-            captureKey: 'user-cross-chat-' + index,
+            captureKey: 'different-character-' + index,
             metadata: { characterId: turn.characterId },
         }));
 
-        const dream = new DreamingEngine(memoryStore).run({ scopeId: 'alex-chat' });
+        const dream = new DreamingEngine(memoryStore).run({
+            scopeId: 'alex-chat',
+            activeCharacterId: 'alex.png',
+        });
         const memories = memoryStore.listMemories({ scope: 'all' });
-        expect(dream.globalEventsReviewed).toBe(3);
-        expect(memories.some(memory => memory.scope === 'user'
-            && memory.content.includes('silver key'))).toBe(true);
+        expect(dream.globalEventsReviewed).toBe(1);
+        expect(memories.some(memory => memory.content.includes('silver key'))).toBe(false);
+        expect(memories.some(memory => memory.scope === 'user' && memory.content.includes('silver key'))).toBe(false);
     });
 
     test('does not dream across chat scopes', async () => {
