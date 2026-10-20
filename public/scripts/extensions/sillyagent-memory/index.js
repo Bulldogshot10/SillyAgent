@@ -344,7 +344,7 @@ async function onChatCompletionPromptReady(eventData) {
 
 async function onTextPromptReady(eventData) {
     if (!settings.autoRetrieveEnabled || eventData?.dryRun || typeof eventData?.prompt !== 'string') return;
-    if (eventData.prompt.includes(MEMORY_MARKER)) return;
+    if (hasMemoryContext(eventData.prompt)) return;
     const memories = await retrieveContext(getLastUserQuery());
     if (!memories.length) return;
     eventData.prompt += '\n\n' + formatMemoryContext(memories);
