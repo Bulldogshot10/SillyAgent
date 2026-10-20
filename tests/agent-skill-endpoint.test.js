@@ -166,7 +166,7 @@ describe('agent-managed skills API', () => {
         const pendingRevision = await pendingRevisionResponse.json();
         expect(pendingRevisionResponse.status).toBe(200);
         expect(pendingRevision.revision.status).toBe('pending');
-        expect(pendingRevision.revision.content).toContain('explicit validation and rollback');
+        expect(pendingRevision.revision.content).toContain('deterministic validation before activation');
 
         const reviewResponse = await postJson(baseUrl + '/skills/agentic-skill-lifecycle/revisions/2/review', {
             decision: 'approve',
