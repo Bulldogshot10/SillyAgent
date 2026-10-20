@@ -679,9 +679,7 @@ import { getGroupAvatar, groups, selected_group } from './group-chats.js';
         console.info('[SillyAgent UI] Chat-first interface ready.');
     }
 
-    if (document.readyState === 'complete') {
-        init();
-    } else {
-        window.addEventListener('load', init, { once: true });
-    }
+    // Wait for SillyTavern's initialization to finish before making API calls.
+    // In particular, getRequestHeaders() needs the CSRF token fetched by firstLoadInit().
+    eventSource.on(event_types.APP_READY, init);
 })();
