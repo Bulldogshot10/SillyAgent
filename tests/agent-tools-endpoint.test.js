@@ -126,6 +126,7 @@ describe('agent tools API', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                activeCharacterId: 'julia-card.png',
                 name: 'memory_propose',
                 arguments: {
                     content: 'The user prefers practical code examples.',
@@ -137,7 +138,7 @@ describe('agent tools API', () => {
         const proposed = await proposalResponse.json();
         expect(proposalResponse.status).toBe(200);
         expect(proposed.ok).toBe(true);
-        expect(proposed.result.scope).toBe('user');
+        expect(proposed.result.scope).toBe('character');
         expect(proposed.result.requiresReview).toBe(false);
         expect(proposed.result.proposal.status).toBe('approved');
         expect(proposed.result.memory.content).toBe('The user prefers practical code examples.');
@@ -150,6 +151,7 @@ describe('agent tools API', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                activeCharacterId: 'julia-card.png',
                 name: 'memory_search',
                 arguments: { query: 'practical code examples', scope: 'user' },
             }),
