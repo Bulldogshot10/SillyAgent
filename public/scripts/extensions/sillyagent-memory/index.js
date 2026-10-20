@@ -1,7 +1,7 @@
 import { getContext, renderExtensionTemplateAsync } from '../../extensions.js';
 import { oai_settings } from '../../openai.js';
 import { formatMemoryContext, hasMemoryContext, insertMemoryContext } from './memory-context.js';
-import { buildAutonomousExtractionPrompt, parseAutonomousExtraction } from './auto-extraction.js';
+import { buildAutonomousExtractionPrompt, isValidAutonomousExtraction, parseAutonomousExtraction } from './auto-extraction.js';
 import { selected_group } from '../../group-chats.js';
 import {
     characters,
@@ -10,6 +10,7 @@ import {
     getCurrentChatId,
     getRequestHeaders,
     generateQuietPrompt,
+    is_send_press,
     saveSettingsDebounced,
     this_chid,
 } from '../../../script.js';
@@ -25,8 +26,8 @@ const AUTONOMOUS_MEMORY_INSTRUCTIONS = [
 ].join(' ');
 let refreshInProgress = false;
 let autonomousReflectionInProgress = false;
-const EXTRACTION_INTERVAL_TURNS = 4;
-const DREAMING_INTERVAL_TURNS = 12;
+let reflectionPollTimer = null;
+let reflectionRetryTimer = null;
 
 function getContextIds() {
     const chatId = getCurrentChatId();
@@ -218,14 +219,10 @@ async function captureTurn(messageIndex, role, messageType = '') {
             }),
         });
 
-        // Background extraction runs automatically after each small batch of captured
-        // turns. Every third batch performs a wider, same-character dreaming pass.
-        // Neither path requires a tool call, save instruction, or UI action from the user.
-        if (role === 'assistant' && result.captured && !result.duplicate
-            && Number.isInteger(result.capturedCount)
-            && result.capturedCount % EXTRACTION_INTERVAL_TURNS === 0) {
-            const mode = result.capturedCount % DREAMING_INTERVAL_TURNS === 0 ? 'dream' : 'extract';
-            void runAutonomousMemoryPass(mode);
+        // The server persists reflection jobs as part of capture. The browser only
+        // provides the provider-backed generation worker; no user action is needed.
+        if (role === 'assistant' && result.queuedReflection?.created) {
+            void processAutonomousReflectionQueue();
         }
     } catch (error) {
         console.debug('[SillyAgent memory] Automatic capture skipped:', error);
@@ -233,46 +230,74 @@ async function captureTurn(messageIndex, role, messageType = '') {
 }
 
 /**
- * Use the current SillyTavern model for silent background extraction/consolidation.
- * This is deliberately independent of native function calling so memory can be
- * autonomous even when the model never chooses a memory tool.
- * @param {'extract'|'dream'} mode Reflection depth.
+ * Drain one persistent reflection job using the configured SillyTavern model.
+ * Jobs are queued in SQLite, so browser/server restarts do not discard pending work.
  * @returns {Promise<void>}
  */
-async function runAutonomousMemoryPass(mode = 'extract') {
-    if (autonomousReflectionInProgress) return;
+async function processAutonomousReflectionQueue() {
+    if (autonomousReflectionInProgress || is_send_press) return;
     const ids = getContextIds();
     if (!ids.activeChatId) return;
 
     autonomousReflectionInProgress = true;
+    let claimedJob = null;
     try {
-        const context = await requestApi('/memory/reflection-context', {
+        const claim = await requestApi('/memory/reflection-jobs/claim', {
             method: 'POST',
             body: JSON.stringify({
                 activeChatId: ids.activeChatId,
                 activeCharacterId: ids.activeCharacterId,
             }),
         });
-        const activeChatTurns = (context.turns || []).filter(turn => turn.chatId === context.activeChatId);
-        const turns = mode === 'dream' ? (context.turns || []) : activeChatTurns.slice(-10);
-        if (!turns.length) return;
+        const job = claim.job;
+        if (!job) return;
+        claimedJob = job;
 
-        const prompt = buildAutonomousExtractionPrompt(turns, context.memories || [], { mode });
+        const context = await requestApi('/memory/reflection-context', {
+            method: 'POST',
+            body: JSON.stringify({
+                activeChatId: job.chatId,
+                activeCharacterId: job.characterId,
+            }),
+        });
+        const activeChatTurns = (context.turns || []).filter(turn => turn.chatId === context.activeChatId);
+        const turns = job.mode === 'dream' ? (context.turns || []) : activeChatTurns.slice(-10);
+        if (!turns.length) {
+            await requestApi('/memory/reflection-jobs/' + encodeURIComponent(job.id) + '/complete', {
+                method: 'POST',
+                body: JSON.stringify({ claimToken: job.claimToken }),
+            });
+            claimedJob = null;
+            return;
+        }
+
+        const prompt = buildAutonomousExtractionPrompt(turns, context.memories || [], { mode: job.mode });
         const responseText = await generateQuietPrompt({
             quietPrompt: prompt,
             skipWIAN: true,
-            responseLength: mode === 'dream' ? 700 : 500,
+            responseLength: job.mode === 'dream' ? 900 : 500,
         });
-        const candidates = parseAutonomousExtraction(responseText, context.memories || [], { mode });
-        let saved = 0;
+        if (!isValidAutonomousExtraction(responseText)) {
+            throw new Error('The background model did not return a valid structured memory payload.');
+        }
 
+        // If the user switched worlds while reflection was running, do not write
+        // results under a different active character. The durable job will retry.
+        const latestContext = getContextIds();
+        if (latestContext.activeCharacterId !== job.characterId
+            || (!job.characterId && latestContext.activeChatId !== job.chatId)) {
+            throw new Error('Active character/chat changed during reflection; job will retry in its original scope.');
+        }
+
+        const candidates = parseAutonomousExtraction(responseText, context.memories || [], { mode: job.mode });
+        let saved = 0;
         for (const candidate of candidates) {
             const result = await requestApi('/execute', {
                 method: 'POST',
                 body: JSON.stringify({
                     name: 'memory_propose',
-                    activeChatId: ids.activeChatId,
-                    activeCharacterId: ids.activeCharacterId,
+                    activeChatId: job.chatId,
+                    activeCharacterId: job.characterId,
                     arguments: {
                         content: candidate.content,
                         kind: candidate.kind,
@@ -281,19 +306,43 @@ async function runAutonomousMemoryPass(mode = 'extract') {
                     },
                 }),
             });
-            if (result.ok && result.result?.memory) saved++;
+            if (result.ok && result.result?.created) saved++;
         }
 
+        await requestApi('/memory/reflection-jobs/' + encodeURIComponent(job.id) + '/complete', {
+            method: 'POST',
+            body: JSON.stringify({ claimToken: job.claimToken }),
+        });
+        claimedJob = null;
+
         if (saved > 0) {
-            console.debug('[SillyAgent memory] Autonomous ' + mode + ' saved ' + saved + ' memory record(s).');
-            await refreshPanel();
+            console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' saved ' + saved + ' memory record(s).');
+            const current = getContextIds();
+            if (current.activeCharacterId === job.characterId) await refreshPanel();
         } else {
-            console.debug('[SillyAgent memory] Autonomous ' + mode + ' completed with no new durable memories.');
+            console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' completed with no new durable memories.');
         }
     } catch (error) {
-        console.debug('[SillyAgent memory] Autonomous ' + mode + ' skipped:', error);
+        console.debug('[SillyAgent memory] Autonomous reflection job failed:', error);
+        if (claimedJob) {
+            try {
+                await requestApi('/memory/reflection-jobs/' + encodeURIComponent(claimedJob.id) + '/fail', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        claimToken: claimedJob.claimToken,
+                        error: String(error?.message || error),
+                    }),
+                });
+            } catch (failError) {
+                console.debug('[SillyAgent memory] Could not requeue reflection job:', failError);
+            }
+        }
     } finally {
         autonomousReflectionInProgress = false;
+        if (reflectionRetryTimer) clearTimeout(reflectionRetryTimer);
+        reflectionRetryTimer = setTimeout(() => {
+            void processAutonomousReflectionQueue();
+        }, 5000);
     }
 }
 
@@ -397,10 +446,18 @@ export async function init() {
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
     eventSource.on(event_types.GENERATE_AFTER_COMBINE_PROMPTS, onTextPromptReady);
 
+    // Poll the durable queue on startup and while the extension is alive. Pending
+    // jobs are persisted server-side and resume after a browser or backend restart.
+    if (reflectionPollTimer) clearInterval(reflectionPollTimer);
+    reflectionPollTimer = setInterval(() => {
+        void processAutonomousReflectionQueue();
+    }, 15000);
+
     enableAutomaticToolCalling();
     try {
         await requestApi('/memory/settings');
         await refreshPanel();
+        void processAutonomousReflectionQueue();
     } catch (error) {
         setStatus(error.message, true);
     }
