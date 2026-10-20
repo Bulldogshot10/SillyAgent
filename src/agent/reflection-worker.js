@@ -185,7 +185,7 @@ export async function runReflectionWorkerOnce({ store, directories, getSkillStor
     const state = getReflectionProviderState(directories);
     if (!state.enabled || !state.configured || !state.credentialAvailable) return false;
 
-    const job = store.claimReflectionJob({ claimToken: randomUUID() });
+    const job = store.claimReflectionJob({ allScopes: true, claimToken: randomUUID() });
     if (!job) return false;
     try {
         const events = getEvidenceForJob(store, job);
