@@ -1116,3 +1116,250 @@ body.sa-line-ui #chat .mes[is_system="true"] .mesAvatarWrapper {
         opacity: .78;
     }
 }
+
+
+/* A real recents inbox: the native character manager remains in its own Cast area. */
+body.sa-line-ui .sa-line-inbox-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+body.sa-line-ui .sa-line-icon-button {
+    display: flex;
+    flex: 0 0 30px;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--SmartThemeBodyColor);
+    font-size: 13px;
+    opacity: .7;
+    cursor: pointer;
+}
+
+body.sa-line-ui .sa-line-icon-button:hover,
+body.sa-line-ui .sa-line-icon-button:focus-visible {
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
+    opacity: 1;
+}
+
+body.sa-line-ui .sa-line-icon-button:focus-visible {
+    outline: 2px solid var(--sa-line-accent);
+    outline-offset: 2px;
+}
+
+body.sa-line-ui .sa-line-inbox-search {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 9px;
+    margin: 12px 12px 9px;
+    padding: 0 12px;
+    min-height: 38px;
+    border: 1px solid var(--sa-line-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, var(--SmartThemeBlurTintColor));
+    opacity: .8;
+}
+
+body.sa-line-ui .sa-line-inbox-search > i {
+    flex: 0 0 auto;
+    font-size: 12px;
+    opacity: .62;
+}
+
+body.sa-line-ui #sa-line-chat-search {
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--SmartThemeBodyColor);
+    font-size: 12px;
+}
+
+body.sa-line-ui #sa-line-chat-search:focus-visible {
+    outline: 0;
+}
+
+body.sa-line-ui #sa-line-contacts-slot {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0 8px 12px;
+    gap: 2px;
+}
+
+body.sa-line-ui .sa-line-inbox-status {
+    margin: 0;
+    padding: 20px 13px;
+    font-size: 12px;
+    line-height: 1.6;
+    opacity: .68;
+}
+
+body.sa-line-ui .sa-line-inbox-empty {
+    margin: 10px 0;
+}
+
+body.sa-line-ui .sa-line-recent-row {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    min-width: 0;
+    min-height: 72px;
+    padding: 10px 9px;
+    border: 0;
+    border-radius: 11px;
+    background: transparent;
+    color: var(--SmartThemeBodyColor);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 120ms ease, opacity 120ms ease;
+}
+
+body.sa-line-ui .sa-line-recent-row:hover,
+body.sa-line-ui .sa-line-recent-row:focus-visible {
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 6%, transparent);
+}
+
+body.sa-line-ui .sa-line-recent-row:focus-visible {
+    outline: 2px solid var(--sa-line-accent);
+    outline-offset: -2px;
+}
+
+body.sa-line-ui .sa-line-recent-row.is-active {
+    background: var(--sa-line-accent-soft);
+}
+
+body.sa-line-ui .sa-line-recent-row.is-opening {
+    opacity: .58;
+    cursor: progress;
+}
+
+body.sa-line-ui .sa-line-recent-avatar {
+    position: relative;
+    display: flex;
+    flex: 0 0 46px;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 9%, transparent);
+    color: var(--SmartThemeBodyColor);
+    font-size: 16px;
+}
+
+body.sa-line-ui .sa-line-recent-avatar > img,
+body.sa-line-ui .sa-line-recent-avatar > .avatar,
+body.sa-line-ui .sa-line-recent-avatar > .avatar img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 50%;
+    box-shadow: none;
+    object-fit: cover;
+}
+
+body.sa-line-ui .sa-line-recent-avatar > .avatar {
+    min-width: 0;
+    min-height: 0;
+    flex: 0 0 100%;
+    overflow: hidden;
+}
+
+body.sa-line-ui .sa-line-recent-avatar [hidden] {
+    display: none !important;
+}
+
+body.sa-line-ui .sa-line-recent-copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+}
+
+body.sa-line-ui .sa-line-recent-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 7px;
+    min-width: 0;
+}
+
+body.sa-line-ui .sa-line-recent-title {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.sa-line-ui .sa-line-recent-meta {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    opacity: .58;
+    font-size: 9px;
+}
+
+body.sa-line-ui .sa-line-recent-subtitle {
+    overflow: hidden;
+    color: var(--SmartThemeBodyColor);
+    font-size: 10px;
+    line-height: 1.3;
+    opacity: .66;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.sa-line-ui .sa-line-recent-preview {
+    display: block;
+    overflow: hidden;
+    color: var(--SmartThemeBodyColor);
+    font-size: 10px;
+    line-height: 1.45;
+    opacity: .68;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+    body.sa-line-ui .sa-line-inbox-search {
+        margin: 10px 13px;
+    }
+
+    body.sa-line-ui #sa-line-contacts-slot {
+        padding: 0 8px 8px;
+    }
+
+    body.sa-line-ui .sa-line-recent-row {
+        min-height: 70px;
+        padding: 9px 10px;
+    }
+}

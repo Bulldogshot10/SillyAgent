@@ -1,15 +1,22 @@
+import { eventSource, event_types, getCurrentChatId } from '../script.js';
+import { getRecentChats, openRecentCharacterChat, openRecentGroupChat } from './welcome-screen.js';
+import { getGroupAvatar, groups, selected_group } from './group-chats.js';
+
 (() => {
     'use strict';
 
     const VIEW_LABELS = {
-        chats: ['Chats', 'Choose a conversation from your character list.'],
+        chats: ['Chats', 'Pick up where the conversation left off.'],
         agent: ['Agent tools', 'A live inventory of tools available to chat generation.'],
         memory: ['Memory', 'Review proposals and manage the memories SillyAgent keeps.'],
     };
 
-    let contactsPlaceholder = null;
     let memoryPlaceholder = null;
     let memoryObserver = null;
+    let recentChats = [];
+    let recentChatsLoaded = false;
+    let recentChatsPromise = null;
+    let recentRefreshTimer = null;
     let toolsLoaded = false;
     let toolsLoading = false;
 
@@ -67,14 +74,43 @@
         const titleWrap = node('div', '');
         titleWrap.append(
             node('h1', 'sa-line-contacts-title', 'Chats'),
-            node('span', 'sa-line-contacts-subtitle', 'Your character inbox'),
+            node('span', 'sa-line-contacts-subtitle', 'Recent conversations'),
         );
-        contactsHeader.append(titleWrap, node('span', '', ''));
-        contactsHeader.lastElementChild.id = 'sa-line-contact-count';
+
+        const headerActions = node('div', 'sa-line-inbox-actions');
+        const count = node('span', '', '');
+        count.id = 'sa-line-contact-count';
+        count.setAttribute('aria-label', 'Recent conversations');
+        const refresh = node('button', 'sa-line-icon-button');
+        refresh.type = 'button';
+        refresh.title = 'Refresh recent chats';
+        refresh.setAttribute('aria-label', 'Refresh recent chats');
+        refresh.append(node('i', 'fa-solid fa-rotate'));
+        refresh.addEventListener('click', () => void loadRecentChats(true));
+
+        const browse = node('button', 'sa-line-icon-button');
+        browse.type = 'button';
+        browse.title = 'Browse characters';
+        browse.setAttribute('aria-label', 'Browse characters');
+        browse.append(node('i', 'fa-solid fa-user-plus'));
+        browse.addEventListener('click', () => navigate('characters'));
+        headerActions.append(count, refresh, browse);
+        contactsHeader.append(titleWrap, headerActions);
+
+        const searchWrap = node('label', 'sa-line-inbox-search');
+        searchWrap.append(node('i', 'fa-solid fa-magnifying-glass'));
+        const search = node('input', '');
+        search.id = 'sa-line-chat-search';
+        search.type = 'search';
+        search.autocomplete = 'off';
+        search.placeholder = 'Search conversations';
+        search.setAttribute('aria-label', 'Search conversations');
+        search.addEventListener('input', renderRecentChats);
+        searchWrap.append(search);
 
         const contactsSlot = node('div', '');
         contactsSlot.id = 'sa-line-contacts-slot';
-        contacts.append(contactsHeader, contactsSlot);
+        contacts.append(contactsHeader, searchWrap, contactsSlot);
 
         const workspace = node('section', '');
         workspace.id = 'sa-line-workspace';
@@ -142,32 +178,212 @@
         }
     }
 
-    function findCharacterList() {
-        return byId('rm_characters_block');
-    }
-
     function mountContacts() {
-        const block = findCharacterList();
-        const host = byId('sa-line-contacts-slot');
-        if (!block || !host) return;
-
-        if (!contactsPlaceholder && block.parentNode !== host) {
-            contactsPlaceholder = document.createComment('SillyAgent chat-list mount point');
-            block.parentNode.insertBefore(contactsPlaceholder, block);
-        }
-        if (block.parentNode !== host) host.append(block);
-        block.classList.add('sa-line-contact-list');
-        syncActiveContact();
+        void loadRecentChats();
     }
 
-    function restoreContacts() {
-        const block = findCharacterList();
-        if (block && contactsPlaceholder && contactsPlaceholder.parentNode) {
-            contactsPlaceholder.parentNode.insertBefore(block, contactsPlaceholder);
-            contactsPlaceholder.remove();
-            contactsPlaceholder = null;
+    function formatRecentPreview(value) {
+        if (typeof value !== 'string' || !value.trim()) return 'No messages yet';
+        return value
+            .replace(/<[^>]{1,500}>/g, ' ')
+            .replace(/!\[[^\]]*\]\([^)]*\)/g, '[image]')
+            .replace(/https?:\/\/\S+/g, 'link')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 112);
+    }
+
+    function getRecentChatPresentation(chat) {
+        const characterName = chat.char_name || 'Conversation';
+        const chatName = (chat.chat_name || characterName).trim();
+        const defaultPrefix = characterName + ' - ';
+
+        if (chatName === characterName) {
+            return { title: characterName, subtitle: chat.is_group ? 'Group chat' : 'Conversation' };
         }
-        block?.classList.remove('sa-line-contact-list');
+        if (chatName.startsWith(defaultPrefix)) {
+            return { title: characterName, subtitle: chatName.slice(defaultPrefix.length) || 'Conversation' };
+        }
+        return { title: chatName, subtitle: characterName };
+    }
+
+    function createRecentChatRow(chat) {
+        const row = node('button', 'sa-line-recent-row');
+        row.type = 'button';
+        row.dataset.chatId = chat.chat_name || '';
+        row.dataset.avatar = chat.avatar || '';
+        row.dataset.group = chat.group || '';
+        row.title = chat.chat_name || chat.char_name || 'Open conversation';
+        row.setAttribute('aria-label', 'Open conversation: ' + (chat.chat_name || chat.char_name || 'Untitled'));
+
+        const avatar = node('span', 'sa-line-recent-avatar');
+        avatar.setAttribute('aria-hidden', 'true');
+        const fallback = node('i', 'fa-solid ' + (chat.is_group ? 'fa-users' : 'fa-user'));
+        const image = node('img', '');
+        image.alt = '';
+        image.hidden = true;
+
+        if (chat.group) {
+            const group = groups.find(item => item.id === chat.group);
+            const groupAvatar = getGroupAvatar(group);
+            const groupAvatarElement = groupAvatar?.[0];
+            if (groupAvatarElement instanceof HTMLElement) {
+                avatar.append(groupAvatarElement.cloneNode(true));
+            } else {
+                avatar.append(fallback);
+            }
+        } else if (typeof chat.char_thumbnail === 'string' && chat.char_thumbnail) {
+            image.src = chat.char_thumbnail;
+            image.hidden = false;
+            image.addEventListener('error', () => {
+                image.hidden = true;
+                if (!avatar.contains(fallback)) avatar.append(fallback);
+            }, { once: true });
+            avatar.append(image, fallback);
+            fallback.hidden = true;
+        } else {
+            avatar.append(fallback);
+        }
+
+        const body = node('span', 'sa-line-recent-copy');
+        const top = node('span', 'sa-line-recent-topline');
+        const presentation = getRecentChatPresentation(chat);
+        top.append(node('strong', 'sa-line-recent-title', presentation.title));
+
+        const meta = node('span', 'sa-line-recent-meta');
+        if (chat.pinned) {
+            const pin = node('i', 'fa-solid fa-thumbtack');
+            pin.title = 'Pinned conversation';
+            pin.setAttribute('aria-label', 'Pinned');
+            meta.append(pin);
+        }
+        meta.append(node('time', 'sa-line-recent-date', chat.date_short || ''));
+        top.append(meta);
+
+        const subline = node('span', 'sa-line-recent-subtitle', presentation.subtitle);
+        const preview = node('span', 'sa-line-recent-preview', formatRecentPreview(chat.mes));
+        body.append(top, subline, preview);
+        row.append(avatar, body);
+
+        row.addEventListener('click', async () => {
+            if (row.disabled) return;
+            row.disabled = true;
+            row.classList.add('is-opening');
+            try {
+                if (chat.group) {
+                    await openRecentGroupChat(chat.group, chat.chat_name);
+                } else if (chat.avatar) {
+                    await openRecentCharacterChat(chat.avatar, chat.chat_name);
+                }
+                if (isMobile()) document.body.dataset.saMobileScreen = 'chat';
+                syncActiveContact();
+                queueRecentChatsRefresh();
+            } finally {
+                row.disabled = false;
+                row.classList.remove('is-opening');
+            }
+        });
+
+        return row;
+    }
+
+    function renderRecentChats() {
+        const list = byId('sa-line-contacts-slot');
+        const search = byId('sa-line-chat-search');
+        if (!list) return;
+
+        const query = (search?.value || '').trim().toLocaleLowerCase();
+        const filtered = recentChats.filter(chat => {
+            const haystack = [chat.chat_name, chat.char_name, chat.mes]
+                .filter(value => typeof value === 'string')
+                .join(' ')
+                .toLocaleLowerCase();
+            return !query || haystack.includes(query);
+        });
+
+        list.replaceChildren();
+        if (!recentChatsLoaded) {
+            list.append(node('p', 'sa-line-inbox-status', 'Loading recent chats…'));
+            return;
+        }
+        if (!filtered.length) {
+            const empty = node('div', 'sa-line-empty sa-line-inbox-empty');
+            empty.append(node('p', '', query
+                ? 'No conversations match that search.'
+                : 'No recent conversations yet. Start one from your character library.'));
+            if (!query) {
+                const button = node('button', 'menu_button', 'Browse characters');
+                button.type = 'button';
+                button.addEventListener('click', () => navigate('characters'));
+                empty.append(button);
+            }
+            list.append(empty);
+            updateContactCount(filtered.length);
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        filtered.forEach(chat => {
+            const row = createRecentChatRow(chat);
+            const isActive = chat.chat_name === getCurrentChatId()
+                && (chat.group ? chat.group === selected_group : !selected_group);
+            row.classList.toggle('is-active', isActive);
+            if (isActive) row.setAttribute('aria-current', 'true');
+            fragment.append(row);
+        });
+        list.append(fragment);
+        updateContactCount(filtered.length);
+    }
+
+    function updateContactCount(count = recentChats.length) {
+        const countNode = byId('sa-line-contact-count');
+        if (!countNode) return;
+        countNode.textContent = count ? String(count) : '';
+        countNode.setAttribute('aria-label', count + ' recent conversations');
+        countNode.title = count + ' recent conversations';
+    }
+
+    async function loadRecentChats(force = false) {
+        if (recentChatsPromise) return recentChatsPromise;
+        if (recentChatsLoaded && !force) {
+            renderRecentChats();
+            return;
+        }
+
+        const list = byId('sa-line-contacts-slot');
+        list?.replaceChildren(node('p', 'sa-line-inbox-status', 'Loading recent chats…'));
+
+        recentChatsPromise = (async () => {
+            try {
+                const result = await getRecentChats();
+                recentChats = Array.isArray(result) ? result : [];
+                recentChatsLoaded = true;
+                renderRecentChats();
+                syncActiveContact();
+            } catch (error) {
+                console.error('[SillyAgent UI] Could not load recent chats.', error);
+                recentChatsLoaded = false;
+                if (list) {
+                    list.replaceChildren();
+                    const message = node('p', 'sa-line-workspace-status error', 'Could not load recent chats.');
+                    const retry = node('button', 'menu_button', 'Retry');
+                    retry.type = 'button';
+                    retry.addEventListener('click', () => void loadRecentChats(true));
+                    list.append(message, retry);
+                }
+            } finally {
+                recentChatsPromise = null;
+            }
+        })();
+
+        return recentChatsPromise;
+    }
+
+    function queueRecentChatsRefresh() {
+        window.clearTimeout(recentRefreshTimer);
+        recentRefreshTimer = window.setTimeout(() => {
+            void loadRecentChats(true);
+        }, 280);
     }
 
     function closeNativeDrawers() {
@@ -242,38 +458,44 @@
         });
     }
 
-    function updateContactCount() {
-        const countNode = byId('sa-line-contact-count');
-        const list = byId('rm_print_characters_block');
-        if (!countNode || !list) return;
-        const count = list.querySelectorAll('.character_select').length;
-        countNode.textContent = count ? String(count) : '';
-        countNode.setAttribute('aria-label', count + ' characters');
-    }
-
     function syncActiveContact() {
         const heading = byId('rm_button_selected_ch')?.querySelector('h2');
-        const name = (heading?.textContent || '').trim();
+        const selectedName = (heading?.textContent || '').trim();
+        const currentChatId = getCurrentChatId();
+        const currentGroupId = selected_group || '';
         const titleNode = byId('sa-line-chat-name');
         const subtitleNode = byId('sa-line-chat-subtitle');
         const imageNode = byId('sa-line-chat-avatar-image');
         const fallbackNode = byId('sa-line-chat-avatar-fallback');
-        const rowList = byId('rm_print_characters_block');
+        const rowList = byId('sa-line-contacts-slot');
         let activeRow = null;
+        let activeChat = null;
 
-        if (rowList) {
-            rowList.querySelectorAll('.character_select').forEach(row => {
-                const rowName = (row.querySelector('.ch_name')?.textContent || '').trim();
-                const matched = !!name && rowName === name;
-                row.classList.toggle('sa-current-chat', matched);
-                if (matched) activeRow = row;
-            });
+        rowList?.querySelectorAll('.sa-line-recent-row').forEach(row => {
+            const matched = !!currentChatId
+                && row.dataset.chatId === currentChatId
+                && (currentGroupId ? row.dataset.group === currentGroupId : !row.dataset.group);
+            row.classList.toggle('is-active', matched);
+            if (matched) {
+                row.setAttribute('aria-current', 'true');
+                activeRow = row;
+                activeChat = recentChats.find(chat => chat.chat_name === currentChatId
+                    && (currentGroupId ? chat.group === currentGroupId : !chat.group));
+            } else {
+                row.removeAttribute('aria-current');
+            }
+        });
+
+        if (titleNode) titleNode.textContent = selectedName || 'Choose a conversation';
+        if (subtitleNode) {
+            const chatName = activeChat?.chat_name || currentChatId || '';
+            subtitleNode.textContent = activeChat && chatName !== selectedName
+                ? chatName
+                : selectedName ? 'Conversation' : 'Select a recent chat to begin';
         }
 
-        if (titleNode) titleNode.textContent = name || 'Choose a character';
-        if (subtitleNode) subtitleNode.textContent = name ? 'Conversation' : 'Select someone from Chats to begin';
         if (imageNode) {
-            const avatar = activeRow?.querySelector('.avatar img');
+            const avatar = activeRow?.querySelector('.sa-line-recent-avatar img');
             const src = avatar?.getAttribute('src') || '';
             if (src && src !== 'data:,') {
                 imageNode.src = src;
@@ -285,11 +507,9 @@
                 if (fallbackNode) fallbackNode.hidden = false;
             }
         }
-        updateContactCount();
     }
 
     function showWorkspace(view) {
-        restoreContacts();
         restoreMemoryPanel();
         closeNativeDrawers();
 
@@ -362,7 +582,6 @@
     function navigate(view) {
         if (view === 'chats') {
             restoreMemoryPanel();
-            restoreContacts();
             closeNativeDrawers();
             document.body.dataset.saView = 'chats';
             document.body.dataset.saMobileScreen = isMobile() ? 'list' : 'chat';
@@ -374,7 +593,6 @@
 
         if (view === 'characters') {
             restoreMemoryPanel();
-            restoreContacts();
             closeNativeDrawers();
             document.body.dataset.saView = 'characters';
             setActiveNavigation('characters');
@@ -384,7 +602,6 @@
 
         if (view === 'settings') {
             restoreMemoryPanel();
-            restoreContacts();
             closeNativeDrawers();
             document.body.dataset.saView = 'settings';
             setActiveNavigation('settings');
@@ -431,24 +648,20 @@
 
         byId('sa-line-rail')?.addEventListener('click', handleNavigationClick);
 
-        byId('sa-line-contacts-slot')?.addEventListener('click', event => {
-            if (!event.target.closest('.character_select')) return;
+        eventSource.on(event_types.CHAT_CHANGED, () => {
             window.setTimeout(() => {
                 syncActiveContact();
-                if (isMobile()) document.body.dataset.saMobileScreen = 'chat';
-            }, 180);
+                queueRecentChatsRefresh();
+            }, 80);
         });
+        eventSource.on(event_types.CHAT_RENAMED, queueRecentChatsRefresh);
+        eventSource.on(event_types.CHAT_DELETED, queueRecentChatsRefresh);
+        eventSource.on(event_types.APP_READY, queueRecentChatsRefresh);
 
         const selectedCharacter = byId('rm_button_selected_ch');
         if (selectedCharacter) {
             new MutationObserver(() => window.setTimeout(syncActiveContact, 0))
                 .observe(selectedCharacter, { childList: true, subtree: true, characterData: true });
-        }
-        const characterList = byId('rm_print_characters_block');
-        if (characterList) {
-            new MutationObserver(() => {
-                window.setTimeout(syncActiveContact, 0);
-            }).observe(characterList, { childList: true, subtree: true });
         }
         window.addEventListener('resize', () => {
             if (document.body.dataset.saView === 'chats' && !isMobile()) {

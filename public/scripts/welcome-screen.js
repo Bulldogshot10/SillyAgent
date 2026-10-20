@@ -475,7 +475,7 @@ async function sendWelcomePanel(chats, expand = false) {
  * @param {string} avatarId Avatar file name
  * @param {string} fileName Chat file name
  */
-async function openRecentCharacterChat(avatarId, fileName) {
+export async function openRecentCharacterChat(avatarId, fileName) {
     const characterId = characters.findIndex(x => x.avatar === avatarId);
     if (characterId === -1) {
         console.error(`Character not found for avatar ID: ${avatarId}`);
@@ -503,7 +503,7 @@ async function openRecentCharacterChat(avatarId, fileName) {
  * @param {string} groupId Group ID
  * @param {string} fileName Chat file name
  */
-async function openRecentGroupChat(groupId, fileName) {
+export async function openRecentGroupChat(groupId, fileName) {
     const group = groups.find(x => x.id === groupId);
     if (!group) {
         console.error(`Group not found for ID: ${groupId}`);
@@ -760,7 +760,7 @@ async function openRecentChatsSettingsPopup() {
  * @property {boolean} hidden Chat will be hidden by default
  * @property {boolean} pinned Indicates if the chat is pinned
  */
-async function getRecentChats() {
+export async function getRecentChats() {
     const settings = getRecentChatsSettings();
     const response = await fetch('/api/chats/recent', {
         method: 'POST',
