@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 import { MemoryStore } from './memory-store.js';
 import { SkillStore } from './skill-store.js';
@@ -29,16 +30,21 @@ export async function getAgentMemoryStore(input) {
         const starting = startReflectionWorker({
             store,
             directories: { ...directories, root },
-            getSkillStore: () => getAgentSkillStore(directories),
+            getSkillStore: characterId => getAgentSkillStore(directories, characterId),
         });
         workerHandles.set(databasePath, starting);
     }
     return store;
 }
 
-export async function getAgentSkillStore(input) {
+export async function getAgentSkillStore(input, characterId) {
     const { root } = normalizeDirectories(input);
-    const databasePath = path.join(root, 'sillyagent', 'skills.sqlite');
+    if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) {
+        throw new TypeError('Persistent agent skills require an active character ID; global skill storage is disabled.');
+    }
+    const normalizedCharacterId = characterId.trim();
+    const partition = createHash('sha256').update(normalizedCharacterId, 'utf8').digest('hex');
+    const databasePath = path.join(root, 'sillyagent', 'skills', partition + '.sqlite');
     if (!skillStores.has(databasePath)) {
         const opening = SkillStore.open(databasePath);
         skillStores.set(databasePath, opening);
