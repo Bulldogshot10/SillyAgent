@@ -51,7 +51,11 @@ describe('native per-character procedural memory', () => {
         expect(bellaSkills.readSkill('rust-cli-workflow')).toBeNull();
         expect(bellaSkills.listSkills()).toHaveLength(0);
 
+        const skillFiles = (await fs.readdir(path.join(root, 'sillyagent', 'skills')))
+            .filter(filename => filename.endsWith('.sqlite'));
+        expect(skillFiles).toHaveLength(2);
+        expect(skillFiles.every(filename => /^[a-f0-9]{64}\.sqlite$/u.test(filename))).toBe(true);
+        await expect(fs.access(path.join(root, 'sillyagent', 'skills.sqlite'))).rejects.toThrow();
         await expect(getAgentSkillStore({ root })).rejects.toThrow(/active character ID/u);
-        await expect(getAgentSkillStore({ root }, '../bella.png')).resolves.toBeDefined();
     });
 });
