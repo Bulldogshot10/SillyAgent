@@ -1,5 +1,6 @@
 import { getContext, renderExtensionTemplateAsync } from '../../extensions.js';
 import { oai_settings } from '../../openai.js';
+import { ToolManager } from '../../tool-calling.js';
 import { formatMemoryContext, hasMemoryContext, insertMemoryContext } from './memory-context.js';
 import { buildAutonomousExtractionPrompt, isValidAutonomousExtraction, parseAutonomousExtraction } from './auto-extraction.js';
 import { selected_group } from '../../group-chats.js';
@@ -51,6 +52,60 @@ async function requestApi(path, options = {}) {
         throw new Error(payload?.error?.message || 'SillyAgent memory request failed (' + response.status + ').');
     }
     return payload || {};
+}
+
+const registeredSillyAgentToolNames = new Set();
+
+/**
+ * Expose server-side SillyAgent tools to SillyTavern's native ToolManager.
+ * Each provider-facing action calls the validated server registry, keeping
+ * permissions, schemas, timeouts, and memory scopes centralized on the backend.
+ * @returns {Promise<void>} Resolves after current built-in tools are registered.
+ */
+async function registerSillyAgentTools() {
+    const payload = await requestApi('/');
+    const definitions = Array.isArray(payload.tools) ? payload.tools : [];
+    const availableNames = new Set();
+
+    for (const definition of definitions) {
+        const tool = definition?.function;
+        if (!tool || typeof tool.name !== 'string' || !tool.name
+            || typeof tool.description !== 'string'
+            || !tool.parameters || typeof tool.parameters !== 'object') continue;
+
+        const providerName = 'sillyagent_' + tool.name.replace(/[^a-z0-9_]/giu, '_');
+        availableNames.add(providerName);
+        ToolManager.registerFunctionTool({
+            name: providerName,
+            displayName: 'SillyAgent · ' + tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            shouldRegister: () => Boolean(getContextIds().activeChatId),
+            action: async parameters => {
+                const ids = getContextIds();
+                if (!ids.activeChatId) throw new Error('SillyAgent tools require an active chat.');
+                const result = await requestApi('/execute', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name: tool.name,
+                        arguments: parameters,
+                        activeChatId: ids.activeChatId,
+                        activeCharacterId: ids.activeCharacterId,
+                    }),
+                });
+                return result.result;
+            },
+        });
+        registeredSillyAgentToolNames.add(providerName);
+    }
+
+    // If the server registry changes during development, remove obsolete
+    // SillyAgent registrations without touching tools owned by other extensions.
+    for (const name of registeredSillyAgentToolNames) {
+        if (availableNames.has(name)) continue;
+        ToolManager.unregisterFunctionTool(name);
+        registeredSillyAgentToolNames.delete(name);
+    }
 }
 
 function setStatus(message, isError = false) {
@@ -468,6 +523,7 @@ export async function init() {
     enableAutomaticToolCalling();
     try {
         await requestApi('/memory/settings');
+        await registerSillyAgentTools();
         await refreshPanel();
         void processAutonomousReflectionQueue();
     } catch (error) {
