@@ -21,9 +21,9 @@ GET /api/agent/tools/skills/:slug/revisions/:version reads a particular revision
 
 JSON body: {"decision":"approve"} or {"decision":"reject"}.
 
-Set requireApproval back to false to return to autonomous activation. The optional SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL environment/config override can enforce a policy independent of per-user settings.
+Set requireApproval back to false to return to autonomous activation. The optional SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL environment override can enforce a global policy independent of per-user settings.
 
-The independent SILLYTAVERN_AGENTTOOLS_SKILLWRITESENABLED setting defaults to true. Set it to false to disable skill creation, updates, and rollback without disabling memory writes or read-only skill discovery.
+The independent SILLYTAVERN_AGENTTOOLS_SKILLWRITESENABLED environment setting defaults to true. Set it to false to disable skill creation, updates, and rollback without disabling memory writes or read-only skill discovery.
 
 ## Rollback
 

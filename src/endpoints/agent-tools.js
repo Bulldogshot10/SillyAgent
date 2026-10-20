@@ -25,6 +25,15 @@ function getSafeContextId(value) {
         : null;
 }
 
+function getEnvironmentBoolean(name, fallback) {
+    const value = process.env[name];
+    if (value === undefined) return fallback;
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
 async function getMemoryStore(request) {
     const root = request.user?.directories?.root ?? globalThis.DATA_ROOT;
     if (typeof root !== 'string' || !root) throw new Error('Could not determine the current user data directory.');
@@ -57,14 +66,12 @@ async function getSkillStore(request) {
 
 function getEffectiveSkillSettings(store) {
     const settings = store.getSettings();
-    const configured = getConfigValue('agentTools.skillsRequireApproval', null);
-    const environmentOverride = process.env.SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL !== undefined;
-    const configOverride = typeof configured === 'boolean';
+    const environmentOverride = process.env.SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL;
     return {
         ...settings,
-        requireApproval: environmentOverride || configOverride
-            ? !!getConfigValue('agentTools.skillsRequireApproval', false, 'boolean')
-            : settings.requireApproval,
+        requireApproval: environmentOverride === undefined
+            ? settings.requireApproval
+            : getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL', settings.requireApproval),
     };
 }
 
@@ -515,7 +522,7 @@ router.post('/execute', async (request, response) => {
     }
 
     const memoryWritesEnabled = !!getConfigValue('agentTools.memoryProposalsEnabled', true, 'boolean');
-    const skillWritesEnabled = !!getConfigValue('agentTools.skillWritesEnabled', true, 'boolean');
+    const skillWritesEnabled = getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_SKILLWRITESENABLED', true);
     const allowedWriteToolsets = [];
     if (memoryWritesEnabled) allowedWriteToolsets.push('memory');
     if (skillWritesEnabled) allowedWriteToolsets.push('skills');
