@@ -359,11 +359,17 @@ describe('agent tools API', () => {
         expect(proposed.result.scope).toBe('character');
         expect(proposed.result.memory.content).toBe('A brass telescope belongs in the attic.');
 
-        const listResponse = await fetch(baseUrl + '/memory/list?scope=character&scopeId=julia-card.png');
+        const listResponse = await fetch(baseUrl + '/memory/list?scope=character&scopeId=julia-card.png&activeCharacterId=julia-card.png');
         const listed = await listResponse.json();
         const memory = listed.memories.find(item => item.content === 'A brass telescope belongs in the attic.');
         expect(memory).toBeDefined();
         expect(memory.scope).toBe('character');
+
+        const foreignListResponse = await fetch(baseUrl + '/memory/list?scope=character&scopeId=bella-card.png&activeCharacterId=julia-card.png');
+        expect(foreignListResponse.status).toBe(403);
+        const globalListResponse = await fetch(baseUrl + '/memory/list?scope=all');
+        expect(globalListResponse.status).toBe(400);
+
 
         const retrievalResponse = await fetch(baseUrl + '/retrieve-context', {
             method: 'POST',
@@ -377,7 +383,7 @@ describe('agent tools API', () => {
 
         const deleteResponse = await fetch(baseUrl + '/memory/' + memory.id, { method: 'DELETE' });
         expect(deleteResponse.status).toBe(200);
-        const finalListResponse = await fetch(baseUrl + '/memory/list?scope=character&scopeId=julia-card.png');
+        const finalListResponse = await fetch(baseUrl + '/memory/list?scope=character&scopeId=julia-card.png&activeCharacterId=julia-card.png');
         const finalList = await finalListResponse.json();
         expect(finalList.memories.some(item => item.id === memory.id)).toBe(false);
         const afterDeleteRetrievalResponse = await fetch(baseUrl + '/retrieve-context', {
@@ -447,6 +453,6 @@ describe('agent tools API', () => {
         expect(clearResponse.status).toBe(200);
         expect(cleared.clearedTurns).toBe(12);
         expect(cleared.capturedTurnsRemaining).toBe(0);
-    });;
+    });
 
 });
