@@ -190,6 +190,36 @@ describe('MemoryStore', () => {
         })).toHaveLength(1);
     });
 
+    test('relevant retrieval never exposes legacy global memory to a character', async () => {
+        const store = await createMemoryStore();
+        store.updateSettings({ requireApproval: true });
+        const legacy = store.proposeMemory({
+            scope: 'user',
+            content: 'Global legacy phrase from an unrelated character.',
+        });
+        const local = store.proposeMemory({
+            scope: 'character',
+            scopeId: 'julia-card.png',
+            content: 'Julia character-only memory phrase.',
+        });
+        store.reviewProposal(legacy.id, 'approve');
+        store.reviewProposal(local.id, 'approve');
+
+        const retrieved = store.searchMemories({
+            query: 'Global legacy phrase',
+            scope: 'relevant',
+            activeCharacterId: 'julia-card.png',
+            activeChatId: 'julia-chat',
+        });
+        expect(retrieved.some(memory => memory.content.includes('Global legacy phrase'))).toBe(false);
+        expect(store.searchMemories({
+            query: 'Julia character-only',
+            scope: 'relevant',
+            activeCharacterId: 'julia-card.png',
+            activeChatId: 'julia-chat',
+        }).some(memory => memory.content.includes('Julia character-only'))).toBe(true);
+    });
+
     test('deduplicates identical pending proposals', async () => {
         const store = await createMemoryStore();
         store.updateSettings({ requireApproval: true });
