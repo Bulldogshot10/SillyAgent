@@ -13,7 +13,7 @@ const CREDENTIAL_PATTERN = /\b(?:password|passphrase|api[ -]?key|access token|re
  * @param {{mode?: 'extract'|'dream'}} options Reflection mode.
  * @returns {string} Prompt for SillyTavern's quiet generation API.
  */
-export function buildAutonomousExtractionPrompt(messages, existingMemories = [], { mode = 'extract' } = {}) {
+export function buildAutonomousExtractionPrompt(messages, existingMemories = [], { mode = 'extract', existingSkills = [] } = {}) {
     const dreaming = mode === 'dream';
     const transcriptLimit = dreaming ? 80 : 10;
     const transcript = (Array.isArray(messages) ? messages : [])
@@ -42,6 +42,17 @@ export function buildAutonomousExtractionPrompt(messages, existingMemories = [],
             content: memory.content.trim().slice(0, 700),
         }));
 
+    const skills = (Array.isArray(existingSkills) ? existingSkills : [])
+        .filter(skill => typeof skill?.slug === 'string' && typeof skill?.content === 'string')
+        .slice(0, 15)
+        .map(skill => ({
+            slug: skill.slug.slice(0, 80),
+            name: typeof skill.name === 'string' ? skill.name.slice(0, 120) : '',
+            description: typeof skill.description === 'string' ? skill.description.slice(0, 500) : '',
+            version: Number.isInteger(skill.version) ? skill.version : undefined,
+            content: skill.content.slice(0, 4000),
+        }));
+
     const instructions = dreaming
         ? [
             'This is a DREAMING / long-horizon consolidation pass. All supplied chats have already been filtered to one active character.',
@@ -49,11 +60,14 @@ export function buildAutonomousExtractionPrompt(messages, existingMemories = [],
             'Merge related evidence into concise, self-contained memories that are more useful than isolated fragments. Do not create keyword lists or generic recurring-topic records.',
             'Preserve distinctions between confirmed facts and uncertainty. Do not infer a preference solely from one question. Do not treat assistant invention as canon unless the user confirms or adopts it.',
             'Avoid duplicating accepted memories. If existing memories already represent the information well, return no candidate for it. Do not invent a memory just to fill the result.',
+            'Review existing procedural skills only when this history contains a repeated, reusable workflow, a user correction that should improve a procedure, or a clear lesson from a successful/failed workflow. Propose at most one new or improved skill. Reuse the existing slug when improving a skill. Skills are procedures, not character facts, plot canon, or summaries. Do not turn one-off roleplay scenes into global procedural skills.',
+            'Do not propose a skill that exposes secrets, weakens permissions, bypasses safety checks, runs arbitrary shell commands, exfiltrates data, or instructs an agent to ignore its policy. New skill content must describe bounded, auditable steps.',
         ]
         : [
             'This is a routine autonomous extraction pass. Examine the latest conversation turns for useful information worth retaining for future conversations.',
             'Extract durable, explicit user facts, preferences, long-term goals, ongoing projects, relationship context, and established character/story canon.',
             'Do not require the user to ask you to remember something. Do not save one-off questions, transient task steps, momentary emotions, guesses, unsupported inferences, or assistant-invented details that were not adopted by the user.',
+            'Do not create or revise procedural skills in routine extraction mode; skill improvement belongs to the deeper dreaming pass.',
         ];
 
     return [
@@ -63,10 +77,12 @@ export function buildAutonomousExtractionPrompt(messages, existingMemories = [],
         'Never store credentials, passwords, API keys, access tokens, recovery phrases, financial identifiers, or highly sensitive personal details.',
         'Keep each memory self-contained and concise. Merge new facts into existing facts when they clearly describe the same evolving topic, and avoid one-off trivia.',
         'Use scope "character" for durable memory associated with the active character. Use scope "chat" only for temporary context useful in the current chat. Never emit global/user scope. Other-character evidence must never be provided to or inferred by this pass.',
-        'Return at most ' + (dreaming ? MAX_DREAM_CANDIDATES : MAX_CANDIDATES) + ' candidates. If nothing is worth saving, return {"memories":[]}.',
-        'Return only valid JSON in this shape: {"memories":[{"content":"self-contained memory","kind":"fact|preference|event|relationship|goal|world_state","importance":1,"scope":"character|chat"}]}. importance must be an integer from 1 to 5.',
+        'Return at most ' + (dreaming ? MAX_DREAM_CANDIDATES : MAX_CANDIDATES) + ' memory candidates and at most one skill candidate. If nothing is worth saving, return {"memories":[],"skills":[]}.',
+        'Return only valid JSON in this shape: {"memories":[{"content":"self-contained memory","kind":"fact|preference|event|relationship|goal|world_state","importance":1,"scope":"character|chat"}],"skills":[{"slug":"lowercase_slug","name":"Skill name","description":"When this procedure is useful","content":"At least 80 characters of actionable procedural Markdown","changeReason":"Why the procedure was added or improved"}]}. importance must be an integer from 1 to 5. Use an empty skills array unless mode is dreaming and the evidence justifies a reusable procedure.',
         'EXISTING MEMORIES (data):',
         JSON.stringify(known),
+        'EXISTING ACTIVE SKILLS (data):',
+        JSON.stringify(skills),
         'RECENT CONVERSATION (data):',
         JSON.stringify(transcript),
     ].join('\n\n');
@@ -146,6 +162,68 @@ function stripCodeFence(responseText) {
     if (lines[0]?.trim().startsWith('```')) lines.shift();
     if (lines.length && lines[lines.length - 1].trim() === '```') lines.pop();
     return lines.join('\n').trim();
+}
+
+/**
+ * Validate new or improved procedural skills proposed by a dreaming pass.
+ * @param {string} responseText Model response.
+ * @param {Array<{slug: string, content: string}>} existingSkills Active skill records.
+ * @param {{mode?: 'extract'|'dream'}} options Reflection mode.
+ * @returns {Array<{slug: string, name: string, description: string, content: string, changeReason: string}>} Safe skill candidates.
+ */
+export function parseAutonomousSkillCandidates(responseText, existingSkills = [], { mode = 'extract' } = {}) {
+    if (mode !== 'dream' || !isValidAutonomousExtraction(responseText)) return [];
+
+    const text = stripCodeFence(responseText);
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    let parsed;
+    try {
+        parsed = JSON.parse(text.slice(start, end + 1));
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(parsed.skills)) return [];
+
+    const bySlug = new Map((Array.isArray(existingSkills) ? existingSkills : [])
+        .filter(skill => typeof skill?.slug === 'string' && typeof skill?.content === 'string')
+        .map(skill => [skill.slug.toLocaleLowerCase(), skill]));
+    const knownContent = new Set([...bySlug.values()].map(skill => normalizeSkillContent(skill.content)));
+    const candidates = [];
+
+    for (const item of parsed.skills) {
+        if (!item || typeof item.slug !== 'string' || typeof item.name !== 'string'
+            || typeof item.description !== 'string' || typeof item.content !== 'string') continue;
+        const slug = item.slug.trim().toLocaleLowerCase();
+        const name = item.name.trim().slice(0, 120);
+        const description = item.description.trim().slice(0, 500);
+        const content = item.content.trim().slice(0, 12000);
+        const changeReason = typeof item.changeReason === 'string'
+            ? item.changeReason.trim().slice(0, 1000)
+            : '';
+        if (!/^[a-z][a-z0-9_-]{0,79}$/u.test(slug)
+            || name.length < 2
+            || description.length < 8
+            || content.length < 80
+            || !changeReason
+            || CREDENTIAL_PATTERN.test(description + '\n' + content)) continue;
+
+        const existing = bySlug.get(slug);
+        const normalizedContent = normalizeSkillContent(content);
+        if ((existing && normalizeSkillContent(existing.content) === normalizedContent)
+            || knownContent.has(normalizedContent)) continue;
+
+        candidates.push({ slug, name, description, content, changeReason });
+        break;
+    }
+
+    return candidates;
+}
+
+function normalizeSkillContent(content) {
+    return typeof content === 'string'
+        ? content.normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+        : '';
 }
 
 function normalizeMemory(content) {
