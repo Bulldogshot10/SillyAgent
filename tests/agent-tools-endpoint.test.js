@@ -391,6 +391,12 @@ describe('agent tools API', () => {
         expect(otherProposal.result.memory.scope).toBe('character');
         expect(otherProposal.result.memory.scopeId).toBe('bella-card.png');
 
+        const summaryBefore = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
+        const juliaSummaryBefore = (await summaryBefore.json()).summary;
+        const summaryAfter = await fetch(baseUrl + '/memory/proposals?activeCharacterId=julia-card.png&activeChatId=chat-attic-test');
+        const juliaSummaryAfter = (await summaryAfter.json()).summary;
+        expect(juliaSummaryAfter).toEqual(juliaSummaryBefore);
+
         const crossCharacterDelete = await fetch(
             baseUrl + '/memory/' + encodeURIComponent(otherProposal.result.memory.id)
                 + '?activeCharacterId=julia-card.png&activeChatId=chat-attic-test',
