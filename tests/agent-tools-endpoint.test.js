@@ -87,12 +87,16 @@ describe('agent tools API', () => {
         expect(proposed.ok).toBe(true);
         expect(proposed.result.requiresReview).toBe(false);
         expect(proposed.result.proposal.status).toBe('approved');
+        expect(proposed.result.scope).toBe('character');
+        expect(proposed.result.memory.scope).toBe('character');
+        expect(proposed.result.memory.scopeId).toBe('julia-card.png');
         expect(proposed.result.memory.content).toBe('The user prefers autonomous persistent memory.');
 
         const pendingResponse = await fetch(baseUrl + '/memory/proposals');
         expect((await pendingResponse.json()).proposals).toHaveLength(0);
 
         const searchResponse = await postJson(baseUrl + '/execute', {
+            activeCharacterId: 'julia-card.png',
             name: 'memory_search',
             arguments: { query: 'autonomous persistent memory', scope: 'user' },
         });
