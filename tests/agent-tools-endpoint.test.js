@@ -475,7 +475,9 @@ describe('agent tools API', () => {
         expect(captureResults[11].queuedReflection.created).toBe(true);
         expect(captureResults[11].queuedReflection.job.mode).toBe('dream');
 
-        const queueStatusResponse = await fetch(baseUrl + '/memory/reflection-jobs/status');
+        const queueStatusResponse = await fetch(baseUrl
+            + '/memory/reflection-jobs/status?activeCharacterId=' + encodeURIComponent(characterId)
+            + '&activeChatId=' + encodeURIComponent(chatId));
         const queueStatus = await queueStatusResponse.json();
         expect(queueStatus.jobs.pending).toBeGreaterThanOrEqual(3);
 
