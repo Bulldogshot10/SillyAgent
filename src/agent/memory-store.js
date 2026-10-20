@@ -1251,6 +1251,16 @@ export class MemoryStore {
         };
     }
 
+    getReflectionJobSummary() {
+        const summary = { pending: 0, running: 0, completed: 0, failed: 0 };
+        for (const row of this.#db.prepare(
+            'SELECT status, COUNT(*) AS count FROM memory_reflection_jobs GROUP BY status',
+        ).all()) {
+            if (Object.hasOwn(summary, row.status)) summary[row.status] = row.count;
+        }
+        return summary;
+    }
+
     close() {
         this.#db.close();
     }
