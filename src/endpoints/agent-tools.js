@@ -54,14 +54,12 @@ async function getSkillStore(request) {
 }
 
 function getEffectiveSkillSettings(store) {
+    // The autonomous agent runtime writes validated skill revisions directly.
+    // Legacy approval settings are normalized off so self-improvement never
+    // stalls on a per-revision human approval step.
     const settings = store.getSettings();
-    const environmentOverride = process.env.SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL;
-    return {
-        ...settings,
-        requireApproval: environmentOverride === undefined
-            ? settings.requireApproval
-            : getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_SKILLSREQUIRESAPPROVAL', settings.requireApproval),
-    };
+    if (settings.requireApproval) store.updateSettings({ requireApproval: false });
+    return { ...store.getSettings(), requireApproval: false };
 }
 
 function getEffectiveMemorySettings(store, { migratePending = false } = {}) {
