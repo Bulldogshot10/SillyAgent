@@ -1,4 +1,5 @@
 import { getContext, renderExtensionTemplateAsync } from '../../extensions.js';
+import { oai_settings } from '../../openai.js';
 import { formatMemoryContext, hasMemoryContext, insertMemoryContext } from './memory-context.js';
 import { selected_group } from '../../group-chats.js';
 import {
@@ -7,17 +8,19 @@ import {
     event_types,
     getCurrentChatId,
     getRequestHeaders,
+    saveSettingsDebounced,
     this_chid,
 } from '../../../script.js';
 
 const API_BASE = '/api/agent/tools';
-const DEFAULT_SETTINGS = {
-    autoRetrieveEnabled: true,
-    autoCaptureEnabled: true,
-    autoDreamEnabled: true,
-    requireApproval: false,
-};
-let settings = { ...DEFAULT_SETTINGS };
+const AUTONOMOUS_MEMORY_MARKER = '[SILLYAGENT_AUTONOMOUS_MEMORY_V1]';
+const AUTONOMOUS_MEMORY_INSTRUCTIONS = [
+    AUTONOMOUS_MEMORY_MARKER,
+    'Use SillyAgent memory tools autonomously. Never ask the user to select a memory scope, approve ordinary memories, or manually trigger a memory operation.',
+    'Search memory when prior facts are relevant. Save durable information as soon as it emerges, without waiting for the user to ask: stable user facts, preferences, and long-term goals belong in user scope; this character’s identity, backstory, and character-specific relationship continuity belong in character scope; temporary task, debugging, or current conversation state belongs in chat scope.',
+    'Use sillyagent_memory_propose with a concise, self-contained memory and an appropriate kind/importance. The scope is optional when unclear because the server will infer it. Avoid duplicates, one-off trivia, credentials, secrets, and unnecessary sensitive detail.',
+    'Let memory operations happen in the background and continue answering the user naturally. Do not announce routine memory writes unless relevant to the conversation.',
+].join(' ');
 let refreshInProgress = false;
 
 function getContextIds() {
@@ -51,78 +54,11 @@ function setStatus(message, isError = false) {
     status.classList.toggle('error', isError);
 }
 
-function setSettingsControls() {
-    for (const key of Object.keys(DEFAULT_SETTINGS)) {
-        const input = document.getElementById('sa_' + key);
-        if (input) input.checked = Boolean(settings[key]);
-    }
-}
-
-async function saveSetting(key, value) {
-    const previous = settings[key];
-    settings[key] = Boolean(value);
-    try {
-        const response = await requestApi('/memory/settings', {
-            method: 'POST',
-            body: JSON.stringify({ [key]: settings[key] }),
-        });
-        settings = { ...DEFAULT_SETTINGS, ...(response.settings || {}) };
-        setSettingsControls();
-        setStatus('Memory settings saved.');
-    } catch (error) {
-        settings[key] = previous;
-        setSettingsControls();
-        setStatus(error.message, true);
-    }
-}
-
 function makeTextElement(tag, className, content) {
     const element = document.createElement(tag);
     if (className) element.className = className;
     element.textContent = String(content ?? '');
     return element;
-}
-
-function getSelectedMemoryScope() {
-    const scope = document.getElementById('sa_memory_scope')?.value || 'user';
-    const ids = getContextIds();
-    if (scope === 'chat') return { scope, scopeId: ids.activeChatId };
-    if (scope === 'character') return { scope, scopeId: ids.activeCharacterId };
-    return { scope: 'user', scopeId: '' };
-}
-
-function renderProposalList(proposals) {
-    const root = document.getElementById('sa_memory_proposals');
-    if (!root) return;
-    root.replaceChildren();
-    const needle = (document.getElementById('sa_memory_search')?.value || '').trim().toLocaleLowerCase();
-    const filtered = proposals.filter(item => !needle
-        || item.content.toLocaleLowerCase().includes(needle)
-        || item.scope.toLocaleLowerCase().includes(needle)
-        || item.kind.toLocaleLowerCase().includes(needle));
-    if (!filtered.length) {
-        root.append(makeTextElement('p', 'sa-empty', 'No pending proposals match this filter.'));
-        return;
-    }
-
-    for (const proposal of filtered) {
-        const row = makeTextElement('div', 'sa-memory-row', '');
-        row.append(makeTextElement('div', 'sa-memory-content', proposal.content));
-        const origin = proposal.metadata?.origin ? ' · ' + proposal.metadata.origin : '';
-        const evidence = Number.isInteger(proposal.metadata?.evidenceCount) ? ' · evidence ' + proposal.metadata.evidenceCount : '';
-        row.append(makeTextElement('small', 'sa-memory-meta',
-            proposal.scope + ' · ' + proposal.kind + ' · importance ' + proposal.importance + origin + evidence));
-        const actions = makeTextElement('div', 'sa-memory-actions', '');
-        const approve = makeTextElement('button', 'menu_button', 'Approve');
-        approve.type = 'button';
-        approve.addEventListener('click', () => reviewProposal(proposal.id, 'approve'));
-        const reject = makeTextElement('button', 'menu_button', 'Reject');
-        reject.type = 'button';
-        reject.addEventListener('click', () => reviewProposal(proposal.id, 'reject'));
-        actions.append(approve, reject);
-        row.append(actions);
-        root.append(row);
-    }
 }
 
 function renderMemoryList(memories) {
@@ -158,13 +94,8 @@ async function refreshPanel() {
     if (refreshInProgress) return;
     refreshInProgress = true;
     try {
-        const [settingsResponse, proposalResponse] = await Promise.all([
-            requestApi('/memory/settings'),
-            requestApi('/memory/proposals'),
-        ]);
-        settings = { ...DEFAULT_SETTINGS, ...(settingsResponse.settings || {}) };
-        setSettingsControls();
-        renderProposalList(proposalResponse.proposals || []);
+        await requestApi('/memory/settings');
+        const proposalResponse = await requestApi('/memory/proposals');
         const summary = proposalResponse.summary || {};
         const stats = document.getElementById('sa_memory_summary');
         if (stats) {
@@ -182,32 +113,9 @@ async function refreshPanel() {
 }
 
 async function loadAcceptedMemories() {
-    const scope = getSelectedMemoryScope();
-    if (scope.scope !== 'user' && !scope.scopeId) {
-        renderMemoryList([]);
-        setStatus('Open a chat or select an active character to manage that scope.');
-        return;
-    }
-    const params = new URLSearchParams({
-        scope: scope.scope,
-        limit: '100',
-    });
-    if (scope.scopeId) params.set('scopeId', scope.scopeId);
+    const params = new URLSearchParams({ scope: 'all', limit: '100' });
     const payload = await requestApi('/memory/list?' + params.toString());
     renderMemoryList(payload.memories || []);
-}
-
-async function reviewProposal(id, decision) {
-    try {
-        await requestApi('/memory/proposals/' + encodeURIComponent(id) + '/review', {
-            method: 'POST',
-            body: JSON.stringify({ decision }),
-        });
-        setStatus('Proposal ' + (decision === 'approve' ? 'approved.' : 'rejected.'));
-        await refreshPanel();
-    } catch (error) {
-        setStatus(error.message, true);
-    }
 }
 
 async function deleteMemory(id) {
@@ -218,28 +126,6 @@ async function deleteMemory(id) {
         await refreshPanel();
     } catch (error) {
         setStatus(error.message, true);
-    }
-}
-
-async function runDreaming() {
-    const ids = getContextIds();
-    if (!ids.activeChatId) {
-        setStatus('Open a chat before running dreaming.', true);
-        return;
-    }
-    const button = document.getElementById('sa_memory_dream');
-    if (button) button.disabled = true;
-    try {
-        const payload = await requestApi('/dream', {
-            method: 'POST',
-            body: JSON.stringify({ activeChatId: ids.activeChatId }),
-        });
-        setStatus(payload.message || 'Dreaming completed. Review the new proposals below.');
-        await refreshPanel();
-    } catch (error) {
-        setStatus(error.message, true);
-    } finally {
-        if (button) button.disabled = false;
     }
 }
 
@@ -275,7 +161,6 @@ function extractMessageText(message) {
 }
 
 async function captureTurn(messageIndex, role, messageType = '') {
-    if (!settings.autoCaptureEnabled) return;
     if (['swipe', 'continue', 'append', 'appendFinal', 'impersonate'].includes(messageType)) return;
     const context = getContext();
     const currentChat = context?.chat;
@@ -317,7 +202,7 @@ function getLastUserQuery() {
 }
 
 async function retrieveContext(query) {
-    if (!settings.autoRetrieveEnabled || typeof query !== 'string' || !query.trim()) return [];
+    if (typeof query !== 'string' || !query.trim()) return [];
     const ids = getContextIds();
     try {
         const payload = await requestApi('/retrieve-context', {
@@ -336,15 +221,35 @@ async function retrieveContext(query) {
     }
 }
 
+function enableAutomaticToolCalling() {
+    if (!oai_settings || oai_settings.function_calling) return;
+    oai_settings.function_calling = true;
+    saveSettingsDebounced();
+}
+
+function insertAutonomousMemoryInstructions(chat) {
+    if (!Array.isArray(chat) || chat.some(message =>
+        typeof message?.content === 'string' && message.content.includes(AUTONOMOUS_MEMORY_MARKER))) return;
+
+    const systemMessage = chat.find(message => message?.role === 'system' && typeof message.content === 'string');
+    if (systemMessage) {
+        systemMessage.content += '\n\n' + AUTONOMOUS_MEMORY_INSTRUCTIONS;
+    } else {
+        chat.unshift({ role: 'system', content: AUTONOMOUS_MEMORY_INSTRUCTIONS });
+    }
+}
+
 async function onChatCompletionPromptReady(eventData) {
-    if (!settings.autoRetrieveEnabled || eventData?.dryRun || !Array.isArray(eventData?.chat)) return;
+    if (eventData?.dryRun || !Array.isArray(eventData?.chat)) return;
+    enableAutomaticToolCalling();
+    insertAutonomousMemoryInstructions(eventData.chat);
     if (hasMemoryContext(eventData.chat)) return;
     const memories = await retrieveContext(getLastUserQuery());
     insertMemoryContext(eventData.chat, memories);
 }
 
 async function onTextPromptReady(eventData) {
-    if (!settings.autoRetrieveEnabled || eventData?.dryRun || typeof eventData?.prompt !== 'string') return;
+    if (eventData?.dryRun || typeof eventData?.prompt !== 'string') return;
     if (hasMemoryContext(eventData.prompt)) return;
     const memories = await retrieveContext(getLastUserQuery());
     if (!memories.length) return;
@@ -356,15 +261,10 @@ export async function init() {
     document.getElementById('extensions_settings')?.append(document.createRange().createContextualFragment(html));
 
     document.getElementById('sa_memory_refresh')?.addEventListener('click', refreshPanel);
-    document.getElementById('sa_memory_dream')?.addEventListener('click', runDreaming);
     document.getElementById('sa_memory_clear_captured')?.addEventListener('click', clearCapturedHistory);
-    document.getElementById('sa_memory_scope')?.addEventListener('change', () => loadAcceptedMemories().catch(error => setStatus(error.message, true)));
     document.getElementById('sa_memory_search')?.addEventListener('keydown', event => {
         if (event.key === 'Enter') refreshPanel();
     });
-    document.getElementById('sa_autoRetrieveEnabled')?.addEventListener('change', event => saveSetting('autoRetrieveEnabled', event.target.checked));
-    document.getElementById('sa_autoCaptureEnabled')?.addEventListener('change', event => saveSetting('autoCaptureEnabled', event.target.checked));
-    document.getElementById('sa_autoDreamEnabled')?.addEventListener('change', event => saveSetting('autoDreamEnabled', event.target.checked));
 
     eventSource.on(event_types.MESSAGE_SENT, index => {
         void captureTurn(index, 'user');
@@ -375,10 +275,9 @@ export async function init() {
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
     eventSource.on(event_types.GENERATE_AFTER_COMBINE_PROMPTS, onTextPromptReady);
 
+    enableAutomaticToolCalling();
     try {
-        const response = await requestApi('/memory/settings');
-        settings = { ...DEFAULT_SETTINGS, ...(response.settings || {}) };
-        setSettingsControls();
+        await requestApi('/memory/settings');
         await refreshPanel();
     } catch (error) {
         setStatus(error.message, true);
