@@ -2,7 +2,7 @@ import { getContext, renderExtensionTemplateAsync } from '../../extensions.js';
 import { oai_settings } from '../../openai.js';
 import { ToolManager } from '../../tool-calling.js';
 import { formatMemoryContext, hasMemoryContext, insertMemoryContext } from './memory-context.js';
-import { buildAutonomousExtractionPrompt, isValidAutonomousExtraction, parseAutonomousExtraction } from './auto-extraction.js';
+import { buildAutonomousExtractionPrompt, isValidAutonomousExtraction, parseAutonomousExtraction, parseAutonomousSkillCandidates } from './auto-extraction.js';
 import { selected_group } from '../../group-chats.js';
 import {
     characters,
@@ -23,7 +23,7 @@ const AUTONOMOUS_MEMORY_INSTRUCTIONS = [
     'Use SillyAgent memory tools autonomously. Never ask the user to select a memory scope, approve ordinary memories, or manually trigger a memory operation.',
     'Call sillyagent_memory_search when prior facts are relevant and not already available in the injected context. Save durable information as soon as it emerges, without waiting for the user to ask. All persistent memory is isolated per active character: stable facts about the user, preferences, and long-term goals are stored inside this character’s own memory partition, alongside this character’s identity, backstory, and relationship continuity. Temporary task, debugging, or current conversation state belongs to the current chat. Never share memories or dreaming evidence across different characters.',
     'Use sillyagent_memory_propose with a concise, self-contained memory and an appropriate kind/importance. The scope is optional when unclear because the server will infer it. Avoid duplicates, one-off trivia, credentials, secrets, and unnecessary sensitive detail.',
-    'Let memory operations happen in the background and continue answering the user naturally. Do not announce routine memory writes unless relevant to the conversation.',
+    'Use skills autonomously too: search the procedural-skill catalog before a reusable multi-step task, read only relevant skills, and after a successful workflow or meaningful correction, consider proposing a reusable skill improvement. Never convert character facts or one-off story events into skills. Let all routine memory/skill work happen without asking the user to trigger it, and continue answering naturally.',
 ].join(' ');
 let refreshInProgress = false;
 let autonomousReflectionInProgress = false;
@@ -335,7 +335,10 @@ async function processAutonomousReflectionQueue() {
             return;
         }
 
-        const prompt = buildAutonomousExtractionPrompt(turns, context.memories || [], { mode: job.mode });
+        const prompt = buildAutonomousExtractionPrompt(turns, context.memories || [], {
+            mode: job.mode,
+            existingSkills: context.skills || [],
+        });
         const responseText = await generateQuietPrompt({
             quietPrompt: prompt,
             skipWIAN: true,
@@ -373,18 +376,40 @@ async function processAutonomousReflectionQueue() {
             if (result.ok && result.result?.created) saved++;
         }
 
+        let skillsUpdated = 0;
+        const skillCandidates = parseAutonomousSkillCandidates(responseText, context.skills || [], { mode: job.mode });
+        for (const candidate of skillCandidates) {
+            const result = await requestApi('/execute', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: 'skill_propose',
+                    activeChatId: job.chatId,
+                    activeCharacterId: job.characterId,
+                    arguments: {
+                        slug: candidate.slug,
+                        name: candidate.name,
+                        description: candidate.description,
+                        content: candidate.content,
+                        changeReason: candidate.changeReason,
+                    },
+                }),
+            });
+            if (result.ok && result.result?.created && !result.result?.duplicate) skillsUpdated++;
+        }
+
         await requestApi('/memory/reflection-jobs/' + encodeURIComponent(job.id) + '/complete', {
             method: 'POST',
             body: JSON.stringify({ claimToken: job.claimToken }),
         });
         claimedJob = null;
 
-        if (saved > 0) {
-            console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' saved ' + saved + ' memory record(s).');
+        if (saved > 0 || skillsUpdated > 0) {
+            console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' saved ' + saved
+                + ' memory record(s) and updated ' + skillsUpdated + ' procedural skill(s).');
             const current = getContextIds();
             if (current.activeCharacterId === job.characterId) await refreshPanel();
         } else {
-            console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' completed with no new durable memories.');
+            console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' completed with no new durable memories or skill changes.');
         }
     } catch (error) {
         retryDelayMs = 16000;
