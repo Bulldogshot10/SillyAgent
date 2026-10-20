@@ -271,6 +271,35 @@ export class MemoryStore {
         return toEvent(this.#db.prepare('SELECT * FROM memory_events WHERE id = ?').get(id));
     }
 
+    #storeAcceptedMemory(proposalRow, updatedAt = Date.now()) {
+        const existing = this.#db.prepare(
+            'SELECT id FROM memories WHERE scope = ? AND scope_id = ? AND kind = ? AND content = ?',
+        ).get(proposalRow.scope, proposalRow.scope_id, proposalRow.kind, proposalRow.content);
+        const memoryId = existing?.id ?? randomUUID();
+        this.#db.prepare(
+            'INSERT INTO memories (id, scope, scope_id, kind, content, importance, source_event_id, metadata_json, created_at, updated_at) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ' +
+            'ON CONFLICT(scope, scope_id, kind, content) DO UPDATE SET ' +
+            'importance = MAX(memories.importance, excluded.importance), updated_at = excluded.updated_at',
+        ).run(
+            memoryId, proposalRow.scope, proposalRow.scope_id, proposalRow.kind, proposalRow.content,
+            proposalRow.importance, proposalRow.source_event_id, proposalRow.metadata_json,
+            proposalRow.created_at, updatedAt,
+        );
+        const memoryRow = this.#db.prepare(
+            'SELECT * FROM memories WHERE scope = ? AND scope_id = ? AND kind = ? AND content = ?',
+        ).get(proposalRow.scope, proposalRow.scope_id, proposalRow.kind, proposalRow.content);
+        this.#db.prepare('DELETE FROM memory_fts WHERE memory_id = ?').run(memoryRow.id);
+        this.#db.prepare(
+            'INSERT INTO memory_fts(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
+        ).run(memoryRow.id, memoryRow.scope, memoryRow.scope_id, memoryRow.content);
+        this.#db.prepare('DELETE FROM memory_fts_trigram WHERE memory_id = ?').run(memoryRow.id);
+        this.#db.prepare(
+            'INSERT INTO memory_fts_trigram(memory_id, scope, scope_id, content) VALUES (?, ?, ?, ?)',
+        ).run(memoryRow.id, memoryRow.scope, memoryRow.scope_id, memoryRow.content);
+        return toMemory(memoryRow);
+    }
+
     /**
      * Persist a memory candidate. Default mode accepts it immediately; review mode stages it as pending.
      * @param {object} input Candidate fields.

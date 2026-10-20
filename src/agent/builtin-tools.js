@@ -92,7 +92,7 @@ export function registerBuiltinTools(registry = toolRegistry) {
     if (!registry.hasTool('memory_propose')) {
         registry.registerTool({
             name: 'memory_propose',
-            description: 'Store a durable memory from a useful fact, preference, goal, relationship, or event. Memories are saved and made retrievable immediately by default; if the owner enabled review, the proposal stays pending until approved.'
+            description: 'Store a durable memory from a useful fact, preference, goal, relationship, or event. Memories are saved and made retrievable immediately by default; if the owner enabled review, the proposal stays pending until approved.',
             toolset: 'memory',
             permission: 'write',
             timeoutMs: 2000,
