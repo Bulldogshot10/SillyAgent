@@ -237,6 +237,61 @@ async function refreshPanel(runtime) {
     }
 }
 
+async function loadReflectionProvider(runtime) {
+    try {
+        const result = await requestApi(runtime, '/memory/reflection-provider');
+        const provider = result.provider || {};
+        const enabled = document.getElementById('sa_reflection_enabled');
+        const endpoint = document.getElementById('sa_reflection_endpoint');
+        const model = document.getElementById('sa_reflection_model');
+        const secretKey = document.getElementById('sa_reflection_secret_key');
+        if (enabled) enabled.checked = provider.enabled === true;
+        if (endpoint) endpoint.value = provider.endpoint || '';
+        if (model) model.value = provider.model || '';
+        if (secretKey) secretKey.value = provider.secretKey || 'none';
+        updateReflectionProviderState(provider);
+    } catch (error) {
+        const state = document.getElementById('sa_reflection_provider_state');
+        if (state) state.textContent = error.message;
+    }
+}
+
+function updateReflectionProviderState(provider) {
+    const state = document.getElementById('sa_reflection_provider_state');
+    if (!state) return;
+    if (!provider.configured) {
+        state.textContent = 'Not configured. Queue jobs will persist until an endpoint and model are saved.';
+    } else if (!provider.enabled) {
+        state.textContent = 'Provider configured but background reflection is disabled.';
+    } else if (!provider.credentialAvailable) {
+        state.textContent = 'Enabled, but the selected credential has no active secret in SillyTavern Secrets.';
+    } else {
+        state.textContent = 'Background reflection enabled. The server worker will process persisted jobs when available.';
+    }
+}
+
+async function saveReflectionProvider(runtime) {
+    const button = document.getElementById('sa_reflection_save');
+    if (button) button.disabled = true;
+    try {
+        const result = await requestApi(runtime, '/memory/reflection-provider', {
+            method: 'POST',
+            body: JSON.stringify({
+                enabled: document.getElementById('sa_reflection_enabled')?.checked === true,
+                endpoint: document.getElementById('sa_reflection_endpoint')?.value || '',
+                model: document.getElementById('sa_reflection_model')?.value || '',
+                secretKey: document.getElementById('sa_reflection_secret_key')?.value || 'none',
+            }),
+        });
+        updateReflectionProviderState(result.provider || {});
+        setStatus('Background reflection settings saved.');
+    } catch (error) {
+        setStatus(error.message, true);
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
 async function clearCapturedHistory(runtime) {
     const ids = contextIds(runtime);
     if (!ids.activeChatId) {
@@ -281,10 +336,13 @@ export function initSillyAgentMemory(runtime) {
     document.getElementById('sa_memory_refresh')?.addEventListener('click', () => void refreshPanel(runtime));
     document.getElementById('sa_memory_clear_captured')?.addEventListener('click', () => void clearCapturedHistory(runtime));
     document.getElementById('sa_memory_search')?.addEventListener('input', () => void refreshPanel(runtime));
+    document.getElementById('sa_reflection_save')?.addEventListener('click', () => void saveReflectionProvider(runtime));
 
     // This request initializes the per-user SQLite store and resumes queued
     // work after a server restart; the backend worker itself is server-owned.
     void requestApi(runtime, '/memory/reflection-jobs/status')
-        .then(() => refreshPanel(runtime))
+        .then(async () => {
+            await Promise.all([refreshPanel(runtime), loadReflectionProvider(runtime)]);
+        })
         .catch(error => setStatus(error.message, true));
 }
