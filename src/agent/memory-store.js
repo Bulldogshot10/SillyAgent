@@ -892,6 +892,16 @@ export class MemoryStore {
      * @param {object} options Scope and filtering options.
      * @returns {object[]} Accepted memories.
      */
+    getMemoryById(memoryId) {
+        if (typeof memoryId !== 'string' || !memoryId) throw new TypeError('A memory ID is required.');
+        return toMemory(this.#db.prepare('SELECT * FROM memories WHERE id = ?').get(memoryId));
+    }
+
+    getProposalById(proposalId) {
+        if (typeof proposalId !== 'string' || !proposalId) throw new TypeError('A proposal ID is required.');
+        return toProposal(this.#db.prepare('SELECT * FROM memory_proposals WHERE id = ?').get(proposalId));
+    }
+
     listMemories({ scope = 'all', scopeId = '', query = '', limit = 50 } = {}) {
         if (typeof query !== 'string' || query.length > 300) {
             throw new TypeError('Memory filter must be a string of 300 characters or fewer.');
