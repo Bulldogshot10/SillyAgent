@@ -45,9 +45,10 @@ jobs:
           src/server-startup.js
           public/scripts/tool-calling.js
           public/scripts/extensions/sillyagent-memory/index.js
+          public/scripts/extensions/sillyagent-memory/memory-context.js
 
       - name: Lint test files
-        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-memory-store.test.js agent-dreaming.test.js
+        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js
         working-directory: tests
 
       - name: Run unit tests
