@@ -542,4 +542,104 @@ describe('MemoryStore', () => {
         expect(results[0].matchedTerms).toEqual(['silver', 'key']);
     });
 
+    test('persists and claims autonomous reflection jobs only within the active character', async () => {
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-reflection-jobs-'));
+        const databasePath = path.join(folder, 'memory.sqlite');
+        let firstStore;
+        let reopened;
+        try {
+            firstStore = await createMemoryStore(databasePath);
+            const enqueued = firstStore.enqueueReflectionJob({
+                scopeId: 'character-chat-a',
+                chatId: 'chat-a',
+                characterId: 'char-a.png',
+                mode: 'extract',
+                triggerEventId: 'event-a',
+                triggerCount: 4,
+                createdAt: 1000,
+            });
+            expect(enqueued.created).toBe(true);
+            expect(enqueued.job.status).toBe('pending');
+            expect(firstStore.enqueueReflectionJob({
+                scopeId: 'character-chat-a',
+                chatId: 'chat-a',
+                characterId: 'char-a.png',
+                mode: 'extract',
+                triggerEventId: 'event-a',
+                triggerCount: 4,
+                createdAt: 1000,
+            }).created).toBe(false);
+
+            firstStore.close();
+            stores = stores.filter(store => store !== firstStore);
+            reopened = await createMemoryStore(databasePath);
+            expect(reopened.listReflectionJobs({ status: 'pending' })).toHaveLength(1);
+            expect(reopened.claimReflectionJob({
+                scopeId: 'character-chat-b',
+                characterId: 'char-b.png',
+                claimToken: 'claim-b',
+                now: 2000,
+            })).toBeNull();
+
+            const claimed = reopened.claimReflectionJob({
+                scopeId: 'character-chat-b',
+                characterId: 'char-a.png',
+                claimToken: 'claim-a',
+                now: 2000,
+            });
+            expect(claimed.id).toBe(enqueued.job.id);
+            expect(claimed.chatId).toBe('chat-a');
+            expect(claimed.attempts).toBe(1);
+            expect(reopened.completeReflectionJob(claimed.id, 'wrong-token', 3000)).toBe(false);
+            expect(reopened.completeReflectionJob(claimed.id, 'claim-a', 3000)).toBe(true);
+            expect(reopened.listReflectionJobs({ status: 'completed' })).toHaveLength(1);
+        } finally {
+            if (firstStore && stores.includes(firstStore)) firstStore.close();
+            if (reopened) reopened.close();
+            stores = stores.filter(store => store !== firstStore && store !== reopened);
+            await fs.rm(folder, { recursive: true, force: true });
+        }
+    });
+
+    test('retries failed autonomous reflection jobs and marks exhausted jobs failed', async () => {
+        const store = await createMemoryStore();
+        store.enqueueReflectionJob({
+            scopeId: 'character-chat-a',
+            chatId: 'chat-a',
+            characterId: 'char-a.png',
+            mode: 'dream',
+            triggerEventId: 'dream-event',
+            triggerCount: 12,
+            createdAt: 1000,
+        });
+
+        const first = store.claimReflectionJob({
+            scopeId: 'character-chat-a',
+            characterId: 'char-a.png',
+            claimToken: 'claim-1',
+            now: 1000,
+        });
+        expect(store.failReflectionJob(first.id, 'claim-1', 'temporary provider failure', 1001)).toBe(true);
+        expect(store.listReflectionJobs({ status: 'pending' })[0].attempts).toBe(1);
+
+        const second = store.claimReflectionJob({
+            scopeId: 'character-chat-a',
+            characterId: 'char-a.png',
+            claimToken: 'claim-2',
+            now: 20000,
+        });
+        expect(second.attempts).toBe(2);
+        expect(store.failReflectionJob(second.id, 'claim-2', 'temporary provider failure', 20001)).toBe(true);
+
+        const third = store.claimReflectionJob({
+            scopeId: 'character-chat-a',
+            characterId: 'char-a.png',
+            claimToken: 'claim-3',
+            now: 50000,
+        });
+        expect(third.attempts).toBe(3);
+        expect(store.failReflectionJob(third.id, 'claim-3', 'persistent provider failure', 50001)).toBe(true);
+        expect(store.listReflectionJobs({ status: 'failed' })).toHaveLength(1);
+    });
+
 });
