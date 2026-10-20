@@ -52,10 +52,10 @@ function inferMemoryScope({ kind = 'fact', content = '' }, context = {}) {
     if (kind === 'relationship') return activeCharacterId ? 'character' : 'user';
     if (kind === 'world_state') return activeCharacterId ? 'character' : (activeChatId ? 'chat' : 'user');
 
-    const characterSpecific = /\\b(character|persona|fictional|backstory|appearance|personality|outfit|roleplay)\\b/u.test(text);
+    const characterSpecific = /\b(character|persona|fictional|backstory|appearance|personality|outfit|roleplay)\b/u.test(text);
     if (characterSpecific && activeCharacterId) return 'character';
 
-    const transient = /\\b(this chat|this conversation|this session|current session|temporary|right now|currently debugging|current debugging|for this task)\\b/u.test(text);
+    const transient = /\b(this chat|this conversation|this session|current session|temporary|right now|currently debugging|current debugging|for this task)\b/u.test(text);
     if (transient && activeChatId) return 'chat';
 
     // Facts and durable events default to user scope unless explicitly tied to a character
