@@ -165,7 +165,6 @@ describe('agent tools API', () => {
                 arguments: { content, scope: 'user', kind: 'fact' },
             }),
         });
-        const proposed = await proposalResponse.json();
         expect(proposalResponse.status).toBe(200);
 
         const searchResponse = await fetch(baseUrl + '/execute', {
