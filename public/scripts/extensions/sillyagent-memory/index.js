@@ -1,8 +1,6 @@
 import { getContext, renderExtensionTemplateAsync } from '../../extensions.js';
 import { oai_settings } from '../../openai.js';
-import { ToolManager } from '../../tool-calling.js';
 import { formatMemoryContext, hasMemoryContext, insertMemoryContext } from './memory-context.js';
-import { buildAutonomousExtractionPrompt, isValidAutonomousExtraction, parseAutonomousExtraction, parseAutonomousSkillCandidates } from './auto-extraction.js';
 import { selected_group } from '../../group-chats.js';
 import {
     characters,
@@ -10,8 +8,6 @@ import {
     event_types,
     getCurrentChatId,
     getRequestHeaders,
-    generateQuietPrompt,
-    is_send_press,
     saveSettingsDebounced,
     this_chid,
 } from '../../../script.js';
@@ -23,12 +19,9 @@ const AUTONOMOUS_MEMORY_INSTRUCTIONS = [
     'Use SillyAgent memory tools autonomously. Never ask the user to select a memory scope, approve ordinary memories, or manually trigger a memory operation.',
     'Call sillyagent_memory_search when prior facts are relevant and not already available in the injected context. Save durable information as soon as it emerges, without waiting for the user to ask. All persistent memory is isolated per active character: stable facts about the user, preferences, and long-term goals are stored inside this character’s own memory partition, alongside this character’s identity, backstory, and relationship continuity. Temporary task, debugging, or current conversation state belongs to the current chat. Never share memories or dreaming evidence across different characters.',
     'Use sillyagent_memory_propose with a concise, self-contained memory and an appropriate kind/importance. The scope is optional when unclear because the server will infer it. Avoid duplicates, one-off trivia, credentials, secrets, and unnecessary sensitive detail.',
-    'Use skills autonomously too: search the procedural-skill catalog before a reusable multi-step task, read only relevant skills, and after a successful workflow or meaningful correction, consider proposing a reusable skill improvement. Never convert character facts or one-off story events into skills. Let all routine memory/skill work happen without asking the user to trigger it, and continue answering naturally.',
+    'Let memory operations happen in the background and continue answering the user naturally. Do not announce routine memory writes unless relevant to the conversation.',
 ].join(' ');
 let refreshInProgress = false;
-let autonomousReflectionInProgress = false;
-let reflectionPollTimer = null;
-let reflectionRetryTimer = null;
 
 function getContextIds() {
     const chatId = getCurrentChatId();
@@ -52,60 +45,6 @@ async function requestApi(path, options = {}) {
         throw new Error(payload?.error?.message || 'SillyAgent memory request failed (' + response.status + ').');
     }
     return payload || {};
-}
-
-const registeredSillyAgentToolNames = new Set();
-
-/**
- * Expose server-side SillyAgent tools to SillyTavern's native ToolManager.
- * Each provider-facing action calls the validated server registry, keeping
- * permissions, schemas, timeouts, and memory scopes centralized on the backend.
- * @returns {Promise<void>} Resolves after current built-in tools are registered.
- */
-async function registerSillyAgentTools() {
-    const payload = await requestApi('/');
-    const definitions = Array.isArray(payload.tools) ? payload.tools : [];
-    const availableNames = new Set();
-
-    for (const definition of definitions) {
-        const tool = definition?.function;
-        if (!tool || typeof tool.name !== 'string' || !tool.name
-            || typeof tool.description !== 'string'
-            || !tool.parameters || typeof tool.parameters !== 'object') continue;
-
-        const providerName = 'sillyagent_' + tool.name.replace(/[^a-z0-9_]/giu, '_');
-        availableNames.add(providerName);
-        ToolManager.registerFunctionTool({
-            name: providerName,
-            displayName: 'SillyAgent · ' + tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-            shouldRegister: () => Boolean(getContextIds().activeChatId),
-            action: async parameters => {
-                const ids = getContextIds();
-                if (!ids.activeChatId) throw new Error('SillyAgent tools require an active chat.');
-                const result = await requestApi('/execute', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        name: tool.name,
-                        arguments: parameters,
-                        activeChatId: ids.activeChatId,
-                        activeCharacterId: ids.activeCharacterId,
-                    }),
-                });
-                return result.result;
-            },
-        });
-        registeredSillyAgentToolNames.add(providerName);
-    }
-
-    // If the server registry changes during development, remove obsolete
-    // SillyAgent registrations without touching tools owned by other extensions.
-    for (const name of registeredSillyAgentToolNames) {
-        if (availableNames.has(name)) continue;
-        ToolManager.unregisterFunctionTool(name);
-        registeredSillyAgentToolNames.delete(name);
-    }
 }
 
 function setStatus(message, isError = false) {
@@ -157,18 +96,12 @@ async function refreshPanel() {
     try {
         await requestApi('/memory/settings');
         const proposalResponse = await requestApi('/memory/proposals');
-        const queueResponse = await requestApi('/memory/reflection-jobs/status');
         const summary = proposalResponse.summary || {};
-        const jobs = queueResponse.jobs || {};
         const stats = document.getElementById('sa_memory_summary');
         if (stats) {
             stats.textContent = 'accepted ' + (summary.acceptedMemories ?? 0)
                 + ' · pending ' + (summary.pendingProposals ?? 0)
-                + ' · events ' + (summary.events ?? 0)
-                + ' · reflection queue ' + (jobs.pending ?? 0) + ' queued'
-                + ' / ' + (jobs.running ?? 0) + ' running'
-                + ' / ' + (jobs.completed ?? 0) + ' completed'
-                + ((jobs.failed ?? 0) ? ' / ' + jobs.failed + ' failed' : '');
+                + ' · events ' + (summary.events ?? 0);
         }
         await loadAcceptedMemories();
         setStatus('Memory state refreshed.');
@@ -269,7 +202,7 @@ async function captureTurn(messageIndex, role, messageType = '') {
     const ids = getContextIds();
     if (!ids.activeChatId) return;
     try {
-        const result = await requestApi('/capture-turn', {
+        await requestApi('/capture-turn', {
             method: 'POST',
             body: JSON.stringify({
                 activeChatId: ids.activeChatId,
@@ -279,162 +212,8 @@ async function captureTurn(messageIndex, role, messageType = '') {
                 messageKey: String(index) + ':' + role,
             }),
         });
-
-        // The server persists reflection jobs as part of capture. The browser only
-        // provides the provider-backed generation worker; no user action is needed.
-        if (role === 'assistant' && result.queuedReflection?.created) {
-            void processAutonomousReflectionQueue();
-        }
     } catch (error) {
         console.debug('[SillyAgent memory] Automatic capture skipped:', error);
-    }
-}
-
-/**
- * Drain one persistent reflection job using the configured SillyTavern model.
- * Jobs are queued in SQLite, so browser/server restarts do not discard pending work.
- * @returns {Promise<void>}
- */
-async function processAutonomousReflectionQueue() {
-    if (autonomousReflectionInProgress || is_send_press) return;
-    const ids = getContextIds();
-    if (!ids.activeChatId) return;
-
-    autonomousReflectionInProgress = true;
-    let claimedJob = null;
-    let shouldPollAgain = false;
-    let retryDelayMs = 1000;
-    try {
-        const claim = await requestApi('/memory/reflection-jobs/claim', {
-            method: 'POST',
-            body: JSON.stringify({
-                activeChatId: ids.activeChatId,
-                activeCharacterId: ids.activeCharacterId,
-            }),
-        });
-        const job = claim.job;
-        if (!job) return;
-        claimedJob = job;
-        shouldPollAgain = true;
-
-        const context = await requestApi('/memory/reflection-context', {
-            method: 'POST',
-            body: JSON.stringify({
-                activeChatId: job.chatId,
-                activeCharacterId: job.characterId,
-            }),
-        });
-        const activeChatTurns = (context.turns || []).filter(turn => turn.chatId === context.activeChatId);
-        const turns = job.mode === 'dream' ? (context.turns || []) : activeChatTurns.slice(-10);
-        if (!turns.length) {
-            await requestApi('/memory/reflection-jobs/' + encodeURIComponent(job.id) + '/complete', {
-                method: 'POST',
-                body: JSON.stringify({ claimToken: job.claimToken }),
-            });
-            claimedJob = null;
-            return;
-        }
-
-        const prompt = buildAutonomousExtractionPrompt(turns, context.memories || [], {
-            mode: job.mode,
-            existingSkills: context.skills || [],
-        });
-        const responseText = await generateQuietPrompt({
-            quietPrompt: prompt,
-            skipWIAN: true,
-            responseLength: job.mode === 'dream' ? 900 : 500,
-        });
-        if (!isValidAutonomousExtraction(responseText)) {
-            throw new Error('The background model did not return a valid structured memory payload.');
-        }
-
-        // If the user switched worlds while reflection was running, do not write
-        // results under a different active character. The durable job will retry.
-        const latestContext = getContextIds();
-        if (latestContext.activeCharacterId !== job.characterId
-            || (!job.characterId && latestContext.activeChatId !== job.chatId)) {
-            throw new Error('Active character/chat changed during reflection; job will retry in its original scope.');
-        }
-
-        const candidates = parseAutonomousExtraction(responseText, context.memories || [], { mode: job.mode });
-        let saved = 0;
-        for (const candidate of candidates) {
-            const result = await requestApi('/execute', {
-                method: 'POST',
-                body: JSON.stringify({
-                    name: 'memory_propose',
-                    activeChatId: job.chatId,
-                    activeCharacterId: job.characterId,
-                    arguments: {
-                        content: candidate.content,
-                        kind: candidate.kind,
-                        importance: candidate.importance,
-                        scope: candidate.scope,
-                    },
-                }),
-            });
-            if (result.ok && result.result?.created) saved++;
-        }
-
-        let skillsUpdated = 0;
-        const skillCandidates = parseAutonomousSkillCandidates(responseText, context.skills || [], { mode: job.mode });
-        for (const candidate of skillCandidates) {
-            const result = await requestApi('/execute', {
-                method: 'POST',
-                body: JSON.stringify({
-                    name: 'skill_propose',
-                    activeChatId: job.chatId,
-                    activeCharacterId: job.characterId,
-                    arguments: {
-                        slug: candidate.slug,
-                        name: candidate.name,
-                        description: candidate.description,
-                        content: candidate.content,
-                        changeReason: candidate.changeReason,
-                    },
-                }),
-            });
-            if (result.ok && result.result?.created && !result.result?.duplicate) skillsUpdated++;
-        }
-
-        await requestApi('/memory/reflection-jobs/' + encodeURIComponent(job.id) + '/complete', {
-            method: 'POST',
-            body: JSON.stringify({ claimToken: job.claimToken }),
-        });
-        claimedJob = null;
-
-        if (saved > 0 || skillsUpdated > 0) {
-            console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' saved ' + saved
-                + ' memory record(s) and updated ' + skillsUpdated + ' procedural skill(s).');
-            const current = getContextIds();
-            if (current.activeCharacterId === job.characterId) await refreshPanel();
-        } else {
-            console.debug('[SillyAgent memory] Autonomous ' + job.mode + ' completed with no new durable memories or skill changes.');
-        }
-    } catch (error) {
-        retryDelayMs = 16000;
-        console.debug('[SillyAgent memory] Autonomous reflection job failed:', error);
-        if (claimedJob) {
-            try {
-                await requestApi('/memory/reflection-jobs/' + encodeURIComponent(claimedJob.id) + '/fail', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        claimToken: claimedJob.claimToken,
-                        error: String(error?.message || error),
-                    }),
-                });
-            } catch (failError) {
-                console.debug('[SillyAgent memory] Could not requeue reflection job:', failError);
-            }
-        }
-    } finally {
-        autonomousReflectionInProgress = false;
-        if (reflectionRetryTimer) clearTimeout(reflectionRetryTimer);
-        if (shouldPollAgain) {
-            reflectionRetryTimer = setTimeout(() => {
-                void processAutonomousReflectionQueue();
-            }, retryDelayMs);
-        }
     }
 }
 
@@ -538,19 +317,10 @@ export async function init() {
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
     eventSource.on(event_types.GENERATE_AFTER_COMBINE_PROMPTS, onTextPromptReady);
 
-    // Poll the durable queue on startup and while the extension is alive. Pending
-    // jobs are persisted server-side and resume after a browser or backend restart.
-    if (reflectionPollTimer) clearInterval(reflectionPollTimer);
-    reflectionPollTimer = setInterval(() => {
-        void processAutonomousReflectionQueue();
-    }, 15000);
-
     enableAutomaticToolCalling();
     try {
         await requestApi('/memory/settings');
-        await registerSillyAgentTools();
         await refreshPanel();
-        void processAutonomousReflectionQueue();
     } catch (error) {
         setStatus(error.message, true);
     }
