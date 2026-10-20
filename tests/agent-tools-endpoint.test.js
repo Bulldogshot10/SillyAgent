@@ -385,4 +385,70 @@ describe('agent tools API', () => {
         expect(afterDeleteRetrieval.memories.some(item => item.content === 'A brass telescope belongs in the attic.')).toBe(false);
     });
 
+    test('automatically queues extraction and dreaming jobs from captured turns', async () => {
+        const characterId = 'auto-memory-character.png';
+        const chatId = 'auto-memory-chat.jsonl';
+        const roles = ['user', 'assistant', 'user', 'assistant', 'user', 'assistant',
+            'user', 'assistant', 'user', 'assistant', 'user', 'assistant'];
+        const captureResults = [];
+
+        for (let index = 0; index < roles.length; index++) {
+            const response = await postJson(baseUrl + '/capture-turn', {
+                activeChatId: chatId,
+                activeCharacterId: characterId,
+                role: roles[index],
+                content: index % 2 === 0
+                    ? 'I am learning Rust and want to build a practical file management CLI.'
+                    : 'The user is learning Rust and plans to build a file management CLI.',
+                messageKey: 'autonomous-' + index,
+            });
+            expect(response.status).toBe(200);
+            captureResults.push(await response.json());
+        }
+
+        expect(captureResults[3].queuedReflection.created).toBe(true);
+        expect(captureResults[3].queuedReflection.job.mode).toBe('extract');
+        expect(captureResults[7].queuedReflection.created).toBe(true);
+        expect(captureResults[7].queuedReflection.job.mode).toBe('extract');
+        expect(captureResults[11].queuedReflection.created).toBe(true);
+        expect(captureResults[11].queuedReflection.job.mode).toBe('dream');
+
+        const wrongCharacterClaim = await postJson(baseUrl + '/memory/reflection-jobs/claim', {
+            activeChatId: 'other-chat.jsonl',
+            activeCharacterId: 'other-character.png',
+        });
+        expect((await wrongCharacterClaim.json()).job).toBeNull();
+
+        const firstClaimResponse = await postJson(baseUrl + '/memory/reflection-jobs/claim', {
+            activeChatId: chatId,
+            activeCharacterId: characterId,
+        });
+        const firstClaim = (await firstClaimResponse.json()).job;
+        expect(firstClaim.mode).toBe('extract');
+        expect(firstClaim.characterId).toBe(characterId);
+
+        const reflectionContextResponse = await postJson(baseUrl + '/memory/reflection-context', {
+            activeChatId: firstClaim.chatId,
+            activeCharacterId: firstClaim.characterId,
+        });
+        const reflectionContext = await reflectionContextResponse.json();
+        expect(reflectionContext.turns.length).toBe(12);
+        expect(reflectionContext.turns.every(turn => turn.chatId === reflectionContext.activeChatId)).toBe(true);
+
+        const completeResponse = await postJson(
+            baseUrl + '/memory/reflection-jobs/' + encodeURIComponent(firstClaim.id) + '/complete',
+            { claimToken: firstClaim.claimToken },
+        );
+        expect(completeResponse.status).toBe(200);
+        expect((await completeResponse.json()).completed).toBe(true);
+
+        const secondClaimResponse = await postJson(baseUrl + '/memory/reflection-jobs/claim', {
+            activeChatId: chatId,
+            activeCharacterId: characterId,
+        });
+        const secondClaim = (await secondClaimResponse.json()).job;
+        expect(secondClaim.mode).toBe('extract');
+        expect(secondClaim.id).not.toBe(firstClaim.id);
+    });
+
 });
