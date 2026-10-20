@@ -74,14 +74,18 @@ function getEffectiveSkillSettings(store) {
     };
 }
 
-function getEffectiveMemorySettings(store, { migratePending = false } = {}) {
-    const settings = store.getSettings();
-    const environmentOverride = process.env.SILLYTAVERN_AGENTTOOLS_MEMORYREQUIRESAPPROVAL;
-    const requireApproval = environmentOverride === undefined
-        ? settings.requireApproval
-        : getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_MEMORYREQUIRESAPPROVAL', settings.requireApproval);
-    if (migratePending && !requireApproval) store.autoApprovePendingProposals();
-    return { ...settings, requireApproval };
+function getEffectiveMemorySettings(store) {
+    // Memory is autonomous by design: legacy opt-outs and approval settings are
+    // migrated forward so capture, retrieval, dreaming, and writes never depend
+    // on a manual toggle or review step.
+    store.autoApprovePendingProposals();
+    return {
+        ...store.getSettings(),
+        autoRetrieveEnabled: true,
+        autoCaptureEnabled: true,
+        autoDreamEnabled: true,
+        requireApproval: false,
+    };
 }
 
 async function sendSkillError(response, error) {
@@ -338,11 +342,11 @@ router.post('/memory/settings', async (request, response) => {
 });
 
 router.get('/memory/list', async (request, response) => {
-    const scope = typeof request.query.scope === 'string' ? request.query.scope : 'user';
-    const scopeId = scope === 'user' ? '' : getSafeContextId(request.query.scopeId);
+    const scope = typeof request.query.scope === 'string' ? request.query.scope : 'all';
+    const scopeId = ['user', 'all'].includes(scope) ? '' : getSafeContextId(request.query.scopeId);
     const query = typeof request.query.query === 'string' ? request.query.query : '';
     const limit = Number.parseInt(request.query.limit, 10);
-    if (scope !== 'user' && !scopeId) {
+    if (!['user', 'all'].includes(scope) && !scopeId) {
         return response.status(400).json({
             ok: false,
             error: { code: 'missing_scope_id', message: 'Character and chat lists require an active scope ID.' },
@@ -409,7 +413,7 @@ router.post('/retrieve-context', async (request, response) => {
     }
     try {
         const store = await getMemoryStore(request);
-        if (!store.getSettings().autoRetrieveEnabled) return response.json({ enabled: false, memories: [] });
+        if (!getEffectiveMemorySettings(store).autoRetrieveEnabled) return response.json({ enabled: false, memories: [] });
         const results = store.searchMemories({
             query,
             scope: 'relevant',
@@ -464,27 +468,6 @@ router.post('/capture-turn', async (request, response) => {
         return response.json({ captured: true, duplicate: captured.duplicate, capturedCount, dreaming });
     } catch (error) {
         return sendMemoryError(response, error);
-    }
-});
-
-router.post('/dream', async (request, response) => {
-    const activeChatId = getSafeContextId(request.body?.activeChatId);
-    if (!activeChatId) {
-        return response.status(400).json({
-            ok: false,
-            error: { code: 'missing_chat_id', message: 'Dreaming requires an active chat.' },
-        });
-    }
-    try {
-        const store = await getMemoryStore(request);
-        const settings = getEffectiveMemorySettings(store);
-        const result = new DreamingEngine(store).run({ scope: 'chat', scopeId: activeChatId, requireApproval: settings.requireApproval });
-        return response.json({ ok: true, ...result, summary: store.getSummary() });
-    } catch (error) {
-        return response.status(400).json({
-            ok: false,
-            error: { code: 'dream_failed', message: error?.message || 'Dreaming could not be completed.' },
-        });
     }
 });
 
