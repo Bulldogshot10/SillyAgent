@@ -243,6 +243,12 @@ export class MemoryStore {
             'scope_id TEXT NOT NULL DEFAULT \'\', content_hash TEXT NOT NULL, created_at INTEGER NOT NULL, ' +
             'PRIMARY KEY(scope, scope_id, content_hash));',
         );
+        this.#db.exec(
+            'CREATE TABLE IF NOT EXISTS memory_forget_evidence (' +
+            'scope TEXT NOT NULL CHECK (scope IN (\'user\',\'character\',\'chat\')), ' +
+            'scope_id TEXT NOT NULL DEFAULT \'\', event_id TEXT NOT NULL, created_at INTEGER NOT NULL, ' +
+            'PRIMARY KEY(scope, scope_id, event_id));',
+        );
         this.#db.exec('CREATE TABLE IF NOT EXISTS memory_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
         this.#db.exec(
             'CREATE TABLE IF NOT EXISTS memory_capture_keys (' +
@@ -374,9 +380,22 @@ export class MemoryStore {
                 const forgotten = this.#db.prepare(
                     'SELECT 1 FROM memory_forget_tombstones WHERE scope = ? AND scope_id = ? AND content_hash = ? LIMIT 1',
                 ).get(target.scope, target.scopeId, getMemoryContentHash(text));
-                if (forgotten) {
+                const forgottenEvidence = requireCurrentEvidenceIds.length
+                    ? this.#db.prepare(
+                        'SELECT 1 FROM memory_forget_evidence WHERE scope = ? AND scope_id = ? AND event_id IN (' +
+                        requireCurrentEvidenceIds.map(() => '?').join(', ') + ') LIMIT 1',
+                    ).get(target.scope, target.scopeId, ...requireCurrentEvidenceIds)
+                    : null;
+                if (forgotten || forgottenEvidence) {
                     this.#db.exec('COMMIT;');
-                    return { memory: null, duplicate: false, forgotten: true, staleEvidence: false, requiresReview: approvalRequired };
+                    return {
+                        memory: null,
+                        duplicate: false,
+                        forgotten: Boolean(forgotten),
+                        forgottenEvidence: Boolean(forgottenEvidence),
+                        staleEvidence: false,
+                        requiresReview: approvalRequired,
+                    };
                 }
             }
             const duplicate = this.#db.prepare(
@@ -1005,6 +1024,23 @@ export class MemoryStore {
                 'SELECT id FROM memory_events WHERE scope = ? AND scope_id = ? ' +
                 'AND event_type = ? AND content = ?',
             ).all(row.scope, row.scope_id, 'memory.proposal_created', row.content);
+
+            const forgottenEvidenceIds = new Set();
+            for (const record of [...relatedMemories, ...relatedProposals]) {
+                const evidenceIds = parseMetadata(record.metadata_json).evidenceEventIds;
+                if (!Array.isArray(evidenceIds)) continue;
+                for (const eventId of evidenceIds) {
+                    if (typeof eventId === 'string' && eventId.length > 0 && eventId.length <= 256) {
+                        forgottenEvidenceIds.add(eventId);
+                    }
+                }
+            }
+            for (const eventId of forgottenEvidenceIds) {
+                this.#db.prepare(
+                    'INSERT INTO memory_forget_evidence(scope, scope_id, event_id, created_at) VALUES (?, ?, ?, ?) ' +
+                    'ON CONFLICT(scope, scope_id, event_id) DO UPDATE SET created_at = excluded.created_at',
+                ).run(row.scope, row.scope_id, eventId, Date.now());
+            }
 
             const sourceEventIds = new Set([
                 ...relatedMemories.map(memory => memory.source_event_id),
