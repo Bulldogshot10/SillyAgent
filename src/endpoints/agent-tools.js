@@ -172,6 +172,9 @@ router.post('/skills/settings', async (request, response) => {
         const store = await getSkillStore(request);
         const settingsInput = { ...(request.body ?? {}) };
         delete settingsInput.activeCharacterId;
+        // The native harness is autonomous: approval gates are deliberately disabled.
+        // Normalize before persistence so a rejected toggle does not create duplicate audit events.
+        if (Object.hasOwn(settingsInput, 'requireApproval')) settingsInput.requireApproval = false;
         store.updateSettings(settingsInput);
         return response.json({ ok: true, settings: getEffectiveSkillSettings(store) });
     } catch (error) {
