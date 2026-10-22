@@ -59,7 +59,7 @@ export class SillyAgentRunner {
      * @param {Function} options.generateStep Exactly one model round.
      * @returns {Promise<*>} Final generation result.
      */
-    async run({ type, generationOptions = {}, dryRun = false, generateStep } = {}) {
+    async run({ type, generationOptions = {}, dryRun = false, signal = null, generateStep } = {}) {
         if (typeof generateStep !== 'function') throw new TypeError('A single-step generation function is required.');
 
         let rounds = 0;
@@ -124,6 +124,7 @@ export class SillyAgentRunner {
                     }
                     execution = await this.#executeToolCall(toolCall, {
                         reasoningText: result.reasoningText ?? null,
+                        signal,
                     });
                 } catch (caught) {
                     const error = caught instanceof Error ? caught : new Error('Tool execution failed.');
