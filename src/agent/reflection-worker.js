@@ -301,8 +301,12 @@ export async function runReflectionWorkerOnce({ store, directories, getSkillStor
         }
 
         // The provider call is an async trust boundary: the user may have cleared
-        // captured history or deleted a memory while it was in flight. Revalidate
-        // evidence and existing memories against persistent storage before writing.
+        // captured history or deleted the owning chat while it was in flight.
+        // A deleted/reclaimed job no longer authorizes writes, even if a transcript
+        // snapshot remains in this worker's memory.
+        if (!store.ownsReflectionJob(job.id, job.claimToken)) return true;
+
+        // Revalidate evidence and existing memories against persistent storage before writing.
         const liveEvents = store.listCapturedTurnsByIds(events.map(event => event.id));
         if (!liveEvents.length) {
             store.completeReflectionJob(job.id, job.claimToken);
@@ -323,7 +327,7 @@ export async function runReflectionWorkerOnce({ store, directories, getSkillStor
             metadata: {
                 jobId: job.id,
                 triggerEventId: job.triggerEventId,
-                evidenceEventIds: events.map(event => event.id).slice(-200),
+                evidenceEventIds: liveEvents.map(event => event.id).slice(-200),
                 acceptedMemoryIds: memoriesAccepted,
                 activatedSkills: skillsCreated,
             },
