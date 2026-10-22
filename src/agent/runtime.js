@@ -127,7 +127,16 @@ export async function deleteAgentCharacterPartitionsIfPresent(input, characterId
     }
     if (roleplayStateStores.has(stateDatabasePath) || existsSync(stateDatabasePath)) {
         const store = await getAgentRoleplayStateStore({ ...directories, root });
-        roleplayState = store.deleteCharacterPartition(normalizedCharacterId);
+        roleplayState = {
+            character: store.deleteCharacterPartition(normalizedCharacterId),
+            orphanedChatPartitions: [],
+        };
+        for (const scopeId of memory?.purgedChatScopeIds ?? []) {
+            roleplayState.orphanedChatPartitions.push({
+                scopeId,
+                ...store.deleteChatPartition(scopeId),
+            });
+        }
     }
     if (skillStores.has(skillDatabasePath) || existsSync(skillDatabasePath)) {
         const store = await getAgentSkillStore({ ...directories, root }, normalizedCharacterId);
