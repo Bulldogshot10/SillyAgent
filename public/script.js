@@ -5624,9 +5624,90 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
  * @param {boolean} dryRun Prompt preview mode.
  * @returns {Promise<*>} Final generated result.
  */
+async function executeHarnessToolCall(toolCall, { reasoningText = null } = {}) {
+    const name = toolCall?.function?.name;
+    const id = typeof toolCall?.id === 'string' ? toolCall.id : 'agent-tool-' + Date.now();
+    const parameters = toolCall?.function?.arguments ?? {};
+    const displayName = ToolManager.getDisplayName(name);
+    const isStealth = ToolManager.isStealthTool(name);
+    let toast = null;
+    let toolResult;
+
+    try {
+        const message = await ToolManager.formatToolCallMessage(name, parameters);
+        toast = message ? toastr.info(message, 'Tool Calling', { timeOut: 0 }) : null;
+
+        if (typeof name === 'string' && name.startsWith('sillyagent_')) {
+            let parsedArguments = parameters;
+            if (typeof parsedArguments === 'string') {
+                parsedArguments = parsedArguments.trim() ? JSON.parse(parsedArguments) : {};
+            }
+            if (!parsedArguments || typeof parsedArguments !== 'object' || Array.isArray(parsedArguments)) {
+                throw new Error('SillyAgent tool arguments must be a JSON object.');
+            }
+
+            const executionResponse = await fetch('/api/agent/tools/execute', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({
+                    name: name.slice('sillyagent_'.length),
+                    arguments: parsedArguments,
+                    activeChatId: getCurrentChatId() || null,
+                    activeCharacterId: selected_group ? null : (characters[this_chid]?.avatar || null),
+                    activeWorldNames: getSillyAgentActiveWorldNames(),
+                }),
+            });
+            const execution = await executionResponse.json().catch(() => null);
+            if (!executionResponse.ok || !execution?.ok) {
+                throw new Error(execution?.error?.message || `Tool execution failed (HTTP ${executionResponse.status}).`);
+            }
+            toolResult = typeof execution.result === 'string' ? execution.result : JSON.stringify(execution.result);
+        } else {
+            toolResult = await ToolManager.invokeFunctionTool(name, parameters);
+        }
+    } catch (error) {
+        toolResult = error instanceof Error ? error : new Error('Tool execution failed.');
+    } finally {
+        if (toast) toastr.clear(toast);
+    }
+
+    if (toolResult instanceof Error) {
+        toolResult.cause = name;
+        if (isStealth) return { error: toolResult, stealth: true };
+        return {
+            error: toolResult,
+            invocation: {
+                id,
+                displayName,
+                name,
+                parameters: typeof parameters === 'string' ? parameters : JSON.stringify(parameters),
+                result: toolResult.toString(),
+                error: true,
+                signature: toolCall?.signature || null,
+                reasoning: reasoningText,
+            },
+        };
+    }
+
+    if (isStealth) return { stealth: true };
+    return {
+        invocation: {
+            id,
+            displayName,
+            name,
+            parameters: typeof parameters === 'string' ? parameters : JSON.stringify(parameters),
+            result: toolResult,
+            error: false,
+            signature: toolCall?.signature || null,
+            reasoning: reasoningText,
+        },
+    };
+}
+
 export async function Generate(type, options = {}, dryRun = false) {
     const runner = new SillyAgentRunner({
-        executeToolCalls: (data, executionOptions) => ToolManager.invokeFunctionTools(data, executionOptions),
+        extractToolCalls: data => ToolManager.extractToolCalls(data),
+        executeToolCall: executeHarnessToolCall,
         saveToolInvocations: invocations => ToolManager.saveFunctionToolInvocations(invocations),
         setToolCallsAllowed: allowed => ToolManager.setHarnessToolCallsAllowed(allowed),
         onToolErrors: errors => ToolManager.showToolCallError(errors),
