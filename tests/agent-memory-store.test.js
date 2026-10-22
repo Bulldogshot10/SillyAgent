@@ -453,6 +453,59 @@ describe('MemoryStore', () => {
         expect(store.searchMemories({ query: 'silver key', scope: 'user' })).toHaveLength(0);
     });
 
+    test('prevents background reflection from recreating explicitly deleted memory content', async () => {
+        const store = await createMemoryStore();
+        const accepted = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'forget-chat',
+            content: 'The user prefers jasmine tea.',
+            kind: 'preference',
+            requireApproval: false,
+        });
+        expect(accepted.memory).not.toBeNull();
+        expect(store.deleteMemory(accepted.memory.id)).toBe(true);
+
+        const reflected = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'forget-chat',
+            content: 'The user prefers jasmine tea.',
+            kind: 'preference',
+            metadata: { origin: 'background_reflection' },
+            requireApproval: false,
+        });
+
+        expect(reflected.forgotten).toBe(true);
+        expect(reflected.memory).toBeNull();
+        expect(store.listMemories({ scope: 'chat', scopeId: 'forget-chat' })).toHaveLength(0);
+    });
+
+    test('rejects a proposal whose captured-turn evidence was cleared before persistence', async () => {
+        const store = await createMemoryStore();
+        const captured = store.captureTurn({
+            scopeId: 'cleared-chat',
+            role: 'user',
+            content: 'I prefer jasmine tea.',
+            captureKey: 'cleared-chat-turn',
+            metadata: { characterId: 'julia.png' },
+        });
+        expect(store.clearCapturedTurns('cleared-chat')).toBe(1);
+
+        const stale = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'cleared-chat',
+            content: 'The user prefers jasmine tea.',
+            kind: 'preference',
+            metadata: { origin: 'background_reflection' },
+            requireApproval: false,
+            requireCurrentEvidenceIds: [captured.event.id],
+        });
+
+        expect(stale.staleEvidence).toBe(true);
+        expect(stale.memory).toBeNull();
+        expect(store.listMemories({ scope: 'chat', scopeId: 'cleared-chat' })).toHaveLength(0);
+        expect(store.listProposals({ status: 'approved' })).toHaveLength(0);
+    });
+
     test('purges same-scope memory copies, proposals, and source events on deletion', async () => {
         const store = await createMemoryStore();
         store.updateSettings({ requireApproval: true });
