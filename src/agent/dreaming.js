@@ -157,6 +157,7 @@ export class DreamingEngine {
                 content,
                 importance: target.scope === 'chat' ? 2 : 3,
                 requireApproval,
+                requireCurrentEvidenceIds: candidate.evidence.slice(-30).map(event => event.id),
                 metadata: {
                     origin: 'dreaming',
                     method: 'recurring-topic-v2',
