@@ -30,7 +30,7 @@ const STATE_WRITE_SCHEMA = {
         patch: { type: 'object', properties: {}, additionalProperties: true },
         expectedVersion: { type: 'integer', minimum: 0 },
     },
-    required: ['patch'],
+    required: ['patch', 'expectedVersion'],
     additionalProperties: false,
 };
 
@@ -77,7 +77,7 @@ const SCENE_ADVANCE_SCHEMA = {
         },
         expectedVersion: { type: 'integer', minimum: 0 },
     },
-    required: ['summary'],
+    required: ['summary', 'expectedVersion'],
     additionalProperties: false,
 };
 
