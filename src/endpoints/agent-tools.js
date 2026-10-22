@@ -42,6 +42,12 @@ function getSafeWorldNames(value) {
             && !name.includes('/') && !name.includes('\\')))].slice(0, 20);
 }
 
+function getScopedWorldId(value) {
+    const names = getSafeWorldNames(value).sort((a, b) => a.localeCompare(b));
+    if (names.length === 0) return null;
+    return 'world-' + createHash('sha256').update(names.join('\0')).digest('hex');
+}
+
 function getScopedMemorySummary(store, activeCharacterId, scopedChatId) {
     if (!activeCharacterId && !scopedChatId) {
         return { events: 0, acceptedMemories: 0, pendingProposals: 0 };
@@ -691,6 +697,7 @@ router.post('/execute', async (request, response) => {
             skillStore,
             worldsDirectory: request.user?.directories?.worlds ?? null,
             activeWorldNames: getSafeWorldNames(body.activeWorldNames),
+            activeWorldId: getScopedWorldId(body.activeWorldNames),
             requireSkillApproval: skillStore ? getEffectiveSkillSettings(skillStore).requireApproval : false,
             requireMemoryApproval: memoryStore ? getEffectiveMemorySettings(memoryStore).requireApproval : false,
             activeChatId: getScopedChatId(
