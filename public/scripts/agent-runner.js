@@ -62,7 +62,8 @@ export class SillyAgentRunner {
                     && toolCallsExecuted < SillyAgentRunner.MAX_TOOL_CALLS;
                 this.#setToolCallsAllowed(withinBudget);
 
-                const result = await generateStep({
+                const stepType = rounds === 0 ? type : 'normal';
+                const result = await generateStep(stepType, {
                     ...generationOptions,
                     depth: originalDepth + rounds,
                 }, { allowToolCalls: withinBudget, round: rounds });
@@ -72,7 +73,7 @@ export class SillyAgentRunner {
                 }
 
                 if (!withinBudget) {
-                    this.#onStop(type);
+                    this.#onStop(stepType);
                     return undefined;
                 }
 
