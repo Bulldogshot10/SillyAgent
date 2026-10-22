@@ -42,6 +42,38 @@ describe('DreamingEngine', () => {
         expect(again.candidatesCreated).toBe(0);
     });
 
+    test('does not recreate an explicitly deleted dreaming memory from its old source turns', async () => {
+        const memoryStore = await createStore();
+        const turns = [
+            ['user', 'The violet observatory beacon guides the expedition.'],
+            ['assistant', 'The violet observatory beacon is visible through the storm.'],
+            ['user', 'We must return to the violet observatory beacon before dawn.'],
+        ];
+        turns.forEach(([role, content], index) => memoryStore.captureTurn({
+            scopeId: 'dream-forget-chat',
+            role,
+            content,
+            captureKey: 'dream-forget-turn-' + index,
+        }));
+
+        const engine = new DreamingEngine(memoryStore);
+        const first = engine.run({ scopeId: 'dream-forget-chat', maxProposals: 1 });
+        expect(first.memoriesAccepted).toBe(1);
+        const memory = memoryStore.listMemories({
+            scope: 'chat',
+            scopeId: 'dream-forget-chat',
+        }).find(item => item.metadata.origin === 'dreaming');
+        expect(memory).toBeDefined();
+        expect(memoryStore.deleteMemory(memory.id)).toBe(true);
+
+        const second = engine.run({ scopeId: 'dream-forget-chat', maxProposals: 1 });
+        expect(second.candidatesCreated).toBe(0);
+        expect(memoryStore.listMemories({
+            scope: 'chat',
+            scopeId: 'dream-forget-chat',
+        }).some(item => item.content === memory.content)).toBe(false);
+    });
+
     test('keeps dreaming proposals pending when human review is enabled', async () => {
         const memoryStore = await createStore();
         memoryStore.updateSettings({ requireApproval: true });
