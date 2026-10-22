@@ -31,8 +31,8 @@ export function formatMemoryContext(memories) {
 
 function isFormattedMemoryContext(content) {
     return typeof content === 'string'
-        && content.includes(MEMORY_MARKER + '\\n' + MEMORY_CONTEXT_INSTRUCTIONS + '\\n<records-json>\\n')
-        && content.includes('\\n</records-json>\\n[/SILLYAGENT_MEMORY_CONTEXT_V1]');
+        && content.includes(MEMORY_MARKER + '\n' + MEMORY_CONTEXT_INSTRUCTIONS + '\n<records-json>\n')
+        && content.includes('\n</records-json>\n[/SILLYAGENT_MEMORY_CONTEXT_V1]');
 }
 
 export function hasMemoryContext(value) {
