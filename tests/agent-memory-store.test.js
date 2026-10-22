@@ -361,6 +361,11 @@ describe('MemoryStore', () => {
             scope: 'user',
             content: 'Use this API key sk-12345678901234567890 for the integration.',
         })).toThrow(/credential-like secrets/);
+        expect(() => store.proposeMemory({
+            scope: 'user',
+            content: 'A safe description of an API integration.',
+            metadata: { updateReason: 'Leaked key: sk-12345678901234567890' },
+        })).toThrow(/credential-like secrets/);
     });
 
     test('searches CJK memories by substring, including short queries', async () => {
