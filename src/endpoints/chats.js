@@ -10,6 +10,7 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import _ from 'lodash';
 
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
+import { deleteAgentChatPartitionIfPresent } from '../agent/runtime.js';
 import {
     getConfigValue,
     humanizedDateTime,
@@ -651,7 +652,7 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
     }
 });
 
-router.post('/delete', validateAvatarUrlMiddleware, function (request, response) {
+router.post('/delete', validateAvatarUrlMiddleware, async function (request, response) {
     try {
         if (!path.extname(request.body.chatfile)) {
             request.body.chatfile += '.jsonl';
@@ -663,7 +664,27 @@ router.post('/delete', validateAvatarUrlMiddleware, function (request, response)
         if (!isPathUnderParent(request.user.directories.chats, chatFilePath)) {
             return response.sendStatus(400);
         }
-        //Return success if the file was deleted.
+        if (!fs.existsSync(chatFilePath)) {
+            console.error('The chat file was not deleted because it does not exist.');
+            return response.sendStatus(400);
+        }
+
+        // Clear the separate native-memory partition before deleting the source
+        // chat. If storage cleanup fails, preserve the chat file rather than leave
+        // captured transcript data orphaned in the harness database.
+        try {
+            const chatId = chatFileName.replace(/\\.jsonl$/iu, '');
+            await deleteAgentChatPartitionIfPresent(request.user.directories, chatId, request.body.avatar_url);
+        } catch (error) {
+            console.error('[SillyAgent chat cleanup]', error);
+            return response.status(503).json({
+                error: true,
+                code: 'agent_chat_cleanup_failed',
+                message: 'SillyAgent could not safely clear this chat’s stored data. The chat file was not deleted.',
+            });
+        }
+
+        // Return success if the file was deleted.
         if (tryDeleteFile(chatFilePath)) {
             return response.send({ ok: true });
         } else {
@@ -897,16 +918,34 @@ router.post('/group/info', async (request, response) => {
     }
 });
 
-router.post('/group/delete', (request, response) => {
+router.post('/group/delete', async (request, response) => {
     try {
         if (!request.body || !request.body.id) {
             return response.sendStatus(400);
         }
 
-        const id = request.body.id;
+        const id = String(request.body.id);
         const chatFilePath = path.join(request.user.directories.groupChats, sanitize(`${id}.jsonl`));
+        if (!isPathUnderParent(request.user.directories.groupChats, chatFilePath)) {
+            return response.sendStatus(400);
+        }
+        if (!fs.existsSync(chatFilePath)) {
+            console.error('The group chat file was not deleted because it does not exist.');
+            return response.sendStatus(400);
+        }
 
-        //Return success if the file was deleted.
+        try {
+            await deleteAgentChatPartitionIfPresent(request.user.directories, id);
+        } catch (error) {
+            console.error('[SillyAgent group chat cleanup]', error);
+            return response.status(503).json({
+                error: true,
+                code: 'agent_chat_cleanup_failed',
+                message: 'SillyAgent could not safely clear this group chat’s stored data. The chat file was not deleted.',
+            });
+        }
+
+        // Return success if the file was deleted.
         if (tryDeleteFile(chatFilePath)) {
             return response.send({ ok: true });
         } else {
