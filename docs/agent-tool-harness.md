@@ -1,25 +1,57 @@
-# Native SillyAgent tool harness
+# Native SillyAgent agent harness
 
-The tool harness is part of the SillyAgent fork, not an extension. Trusted server-side tool definitions are registered with `ToolRegistry`; SillyTavern's existing `public/scripts/tool-calling.js` is the provider adapter for supported Chat Completion models. The native memory module initializes the relevant lifecycle and settings UI from the main application source.
+SillyAgent is wired into SillyTavern's core. It uses the existing provider-aware `ToolManager` generation loop rather than introducing a second competing loop. Tool implementations and durable state live in the server process; the browser receives only function schemas and sends tool arguments plus current conversation context.
 
-## Server contract
+## Execution lifecycle
 
-The API is mounted under `/api/agent/tools`. `GET /` returns registered roleplay, memory, and skills tools in OpenAI-compatible function-calling format. `POST /execute` validates the tool name and schema, applies toolset/write permissions, enforces request/result size limits, and calls trusted server-side handlers. The browser-facing tool names are namespaced by SillyTavern's `ToolManager` and mapped back to server registry names on execution.
+1. Before a supported chat-completion request, `ToolManager` fetches `GET /api/agent/tools` and registers the returned function definitions in its reserved `sillyagent_` namespace. For example, server tool `world_get_state` appears to the model as `sillyagent_world_get_state`.
+2. The model can request one or more tools. SillyTavern's native tool-call loop invokes the registered browser adapters and sends `POST /api/agent/tools/execute` with the function name, validated arguments, current character/chat IDs, and active World Info book names.
+3. The server resolves the per-user stores, checks toolset policy and JSON schema, validates scoped context, applies timeouts and response limits, and calls only a registered trusted handler. Filesystem paths and secret values are never model-selected arguments.
+4. The result or a bounded error is returned as a tool result. SillyTavern adds it to the conversation and performs its normal continuation generation. Tool-call recursion remains subject to SillyTavern's existing provider and recursion settings.
 
-## Current built-in toolsets
+This gives the model a real read/act/observe cycle without a custom provider implementation or a second tool loop. Automatic memory capture and reflection remain independent of model tool calls.
 
-The roleplay toolset includes `roleplay_roll_dice`, which uses Node's cryptographic `randomInt` and bounded integer inputs. The memory toolset includes `memory_search` and `memory_propose`. The skills toolset provides metadata search, selected-skill retrieval, and evidence-driven versioned skill proposals. Active character/chat context is supplied by native core lifecycle code and validated by the server.
+## Registered tool surface
 
-The memory tool never exposes a global cross-character search to the model. Relevant searches are constrained to the active character and exact active chat. Memory writes are scoped to the active character or chat, accepted automatically by the autonomous reflection path, and checked for scope consistency. Skill writes use versioned records and retain source/reason/evaluation metadata. Skill stores are separate SQLite databases keyed by a one-way hash of the active character ID; the server refuses skill access without active-character context, and legacy unscoped skills are not merged into any character.
+| Server tool | Purpose | Access |
+| --- | --- | --- |
+| `memory_search` / `memory_propose` | Read relevant memory and persist durable facts/preferences/events | Read / write |
+| `skill_search` / `skill_read` | Progressive disclosure of procedural skills | Read |
+| `skill_propose` / `skill_rollback` | Versioned skill improvement and rollback | Write |
+| `world_get_state` / `world_update_state` | Read or patch shared setting state for the active chat | Read / write |
+| `character_get_state` / `character_update_state` | Read or patch persistent dynamic state for the active character | Read / write |
+| `scene_get_state` / `scene_advance` | Read current scene metadata and commit meaningful scene transitions | Read / write |
+| `lore_search` | Search only World Info books active for the current SillyTavern context | Read |
+| `dice_roll` / `roleplay_roll_dice` | Cryptographically fair, bounded random rolls | Read |
 
-## Autonomous runtime
+The model-facing descriptions tell it when tools are useful, when to read before writing, and not to advance a scene on every ordinary message. Tool names are reserved under `sillyagent_` in the browser so server functions cannot overwrite user-registered tools.
 
-The same backend process owns the persistent SQLite reflection queue and worker. Every newly captured assistant reply queues or refreshes an automatic review without an explicit phrase, tool invocation, slash command, or turn-count threshold. Pending jobs coalesce per chat/character/mode to keep load bounded. Reviews combine recent active-chat evidence with bounded prior-chat context from the same character, letting one pass extract durable memories, supersede outdated facts with evidence, and improve reusable procedural skills after a verified successful workflow or user correction. A single explicit provider configuration supplies server-side background inference. No extension activation, quiet-generation browser API, manual dreaming action, or per-write human approval is used by this runtime.
+## Durable state and scope
 
-## Security and validation
+`src/agent/roleplay-state-store.js` owns `sillyagent/roleplay-state.sqlite` under each SillyTavern data root. State is stored as versioned JSON partitions with a separate append-only change history. The schema distinguishes `world`, `character`, and `scene` state types.
 
-Tool arguments are schema-validated before execution. Privileged tool permissions default to denied unless the registered tool and calling policy allow them. Memory reflection candidates must cite known evidence event IDs, stay within bounded schemas and scopes, and cannot set another character's memory partition. Memory deletion, proposal review, and visible summary counts are constrained to the active character and chat; global `all` listing is rejected. Credentials are resolved server-side from SillyTavern Secrets; non-loopback reflection endpoints must use HTTPS, and neither secrets nor raw upstream response bodies are stored in job payloads. Skills are Markdown procedures, not executable code. Arbitrary shell execution, arbitrary JavaScript evaluation, and unrestricted file access are not built-in tools.
+World and scene state are scoped to the active chat. When a character is selected, the backend hashes the character/chat pair into the chat partition so two characters using similarly named chat files cannot read each other's state. Character state uses the active character's ID and is kept separate from the character card's static description and from memory reflection. Group chats do not silently inherit the last individually selected character's state.
+
+State changes use JSON Merge Patch semantics: nested objects merge, arrays replace, and `null` removes a key. Each successful update increments a version and records the patch, source tool, and timestamp. Writers can pass the version returned by a read as `expectedVersion`; stale writes return a conflict instead of silently overwriting newer state. State keys, nesting depth, array lengths, string length, patch size, and total partition size are bounded. Credential-like secret strings are rejected.
+
+`scene_advance` is a specialized commit operation. It increments `sceneNumber`, saves a concise summary and transition timestamp, and can update location, time, participants, open threads, and resolved threads. If no explicit open-thread list is supplied, resolved thread names are removed from the stored list. This is a structured checkpoint, not an automatic summary after every reply.
+
+## Lore access
+
+The browser passes active World Info book names from SillyTavern's current context; the model cannot select arbitrary filesystem paths. `lore_search` reads only those books under the user's World Info directory, skips symlinks and malformed/oversized files, applies a total read budget, ranks entries by query-term matches, and truncates returned entry content. Lore entries are untrusted reference data, not instructions. The tool is read-only and never edits a lorebook.
+
+## Permissions and failure behavior
+
+All tool definitions are server-owned and schema-validated. The runtime applies per-tool read/write/external permissions, toolset allow-lists, bounded timeouts, and a 32 KiB maximum JSON result. Write operations for the world, character, and scene toolsets can be disabled with `SILLYTAVERN_AGENTTOOLS_ROLEPLAYSTATEWRITESENABLED=false`. Memory and skill write policies retain their existing `SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED` and `SILLYTAVERN_AGENTTOOLS_SKILLWRITESENABLED` switches.
+
+Character state tools require an active single character. World and scene tools require an active chat. Lore search returns no matches when no active books are available. A state conflict asks the model to re-read and retry; an unavailable store or failed tool returns an error envelope to the tool-call loop. Arbitrary shell execution, arbitrary JavaScript evaluation, unrestricted filesystem tools, or provider credentials are not exposed.
+
+## Relationship to automatic memory
+
+Automatic user/assistant turn capture, relevance-based memory retrieval, and post-assistant background reflection are separate from explicit tools. They work even if the model never calls `memory_search` or `memory_propose`. Reflection uses evidence IDs, scope checks, duplicate detection, bounded structured output, and same-character history; it does not write the roleplay state tables. Conversely, state tools handle immediate explicit state transitions while the conversation is in progress.
+
+See [native autonomous memory and reflection](agent-memory-autonomy.md) for the event-driven memory pipeline.
 
 ## Verification
 
-The CI workflow lints the native server/frontend implementation and runs unit and endpoint tests for the registry, memory store, character isolation, persistent queues, worker retries, provider configuration, reflection validation, and skill revisions.
+Unit and endpoint tests cover registry contracts, permission denials, tool execution, isolated character/chat state, JSON merge patches, version conflicts, scene advancement, active-lorebook filtering, dice bounds, autonomous memory, durable reflection jobs, and skill revisions.
