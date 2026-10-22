@@ -11,11 +11,19 @@ function makeRunner(overrides = {}) {
         stops: [],
     };
     const runner = new SillyAgentRunner({
-        executeToolCalls: async (data, options) => {
-            calls.executed.push({ data, options });
-            return overrides.execution
-                ? await overrides.execution(data, options, calls)
-                : { invocations: [{ id: 'tool-' + calls.executed.length, name: 'mock_tool', result: { ok: true } }], errors: [], stealthCalls: [] };
+        extractToolCalls: data => Array.isArray(data) ? data : (data?.calls ?? []),
+        executeToolCall: async (toolCall, options) => {
+            calls.executed.push({ toolCall, options });
+            if (overrides.execution) return await overrides.execution(toolCall, options, calls);
+            return {
+                invocation: {
+                    id: toolCall.id,
+                    name: toolCall.function.name,
+                    parameters: JSON.stringify(toolCall.function.arguments),
+                    result: { ok: true },
+                    error: false,
+                },
+            };
         },
         saveToolInvocations: async invocations => calls.saved.push(invocations),
         setToolCallsAllowed: allowed => calls.policies.push(allowed),
@@ -23,6 +31,10 @@ function makeRunner(overrides = {}) {
         onStop: type => calls.stops.push(type),
     });
     return { runner, calls };
+}
+
+function toolCall(id, args = {}) {
+    return { id, function: { name: 'mock_tool', arguments: args } };
 }
 
 describe('SillyAgentRunner', () => {
@@ -40,7 +52,7 @@ describe('SillyAgentRunner', () => {
                     return {
                         __sillyAgentRunner: true,
                         kind: 'tool_calls',
-                        responseData: { step: steps.length },
+                        responseData: [toolCall('tool-' + steps.length, { step: steps.length })],
                     };
                 }
                 return 'final narrative';
@@ -51,7 +63,7 @@ describe('SillyAgentRunner', () => {
         expect(steps.map(step => step.type)).toEqual(['regenerate', 'normal', 'normal']);
         expect(steps.map(step => step.options.depth)).toEqual([0, 1, 2]);
         expect(steps.every(step => step.options.force_name2 === true)).toBe(true);
-        expect(calls.executed.map(item => item.data.step)).toEqual([1, 2]);
+        expect(calls.executed.map(item => item.toolCall.function.arguments.step)).toEqual([1, 2]);
         expect(calls.saved).toHaveLength(2);
         expect(calls.policies).toEqual([true, true, true, true]);
     });
@@ -64,7 +76,7 @@ describe('SillyAgentRunner', () => {
             generateStep: async (_type, _options, policy) => {
                 modelSteps += 1;
                 return policy.allowToolCalls
-                    ? { __sillyAgentRunner: true, kind: 'tool_calls', responseData: { step: modelSteps } }
+                    ? { __sillyAgentRunner: true, kind: 'tool_calls', responseData: [toolCall('step-' + modelSteps)] }
                     : 'budgeted final answer';
             },
         });
@@ -78,11 +90,11 @@ describe('SillyAgentRunner', () => {
 
     test('does not spin if dispatch produces no user-visible tool results', async () => {
         const { runner, calls } = makeRunner({
-            execution: async () => ({ invocations: [], errors: [new Error('invalid tool')], stealthCalls: [] }),
+            execution: async () => ({ error: new Error('invalid tool') }),
         });
         const result = await runner.run({
             type: 'normal',
-            generateStep: async () => ({ __sillyAgentRunner: true, kind: 'tool_calls', responseData: { tool: true } }),
+            generateStep: async () => ({ __sillyAgentRunner: true, kind: 'tool_calls', responseData: [toolCall('invalid')] }),
         });
 
         expect(result).toBeUndefined();
@@ -91,31 +103,25 @@ describe('SillyAgentRunner', () => {
         expect(calls.executed).toHaveLength(1);
     });
 
-    test('limits the final dispatch to remaining turn-wide tool budget', async () => {
-        const { runner, calls } = makeRunner({
-            execution: async (_data, options) => ({
-                invocations: Array.from({ length: options.maxCalls }, (_, index) => ({
-                    id: 'mock-' + index, name: 'mock_tool', result: { ok: true },
-                })),
-                errors: [],
-                stealthCalls: [],
-            }),
-        });
+    test('caps executed calls across the entire turn and records skipped calls', async () => {
+        const { runner, calls } = makeRunner();
         let steps = 0;
+        const lotsOfCalls = Array.from({ length: SillyAgentRunner.MAX_TOOL_CALLS + 6 }, (_, index) => toolCall('bulk-' + index));
         const result = await runner.run({
             type: 'normal',
             generateStep: async (_type, _options, policy) => {
                 steps += 1;
                 return policy.allowToolCalls
-                    ? { __sillyAgentRunner: true, kind: 'tool_calls', responseData: { step: steps } }
+                    ? { __sillyAgentRunner: true, kind: 'tool_calls', responseData: lotsOfCalls }
                     : 'final after global call budget';
             },
         });
 
         expect(result).toBe('final after global call budget');
-        expect(calls.executed).toHaveLength(1);
-        expect(calls.executed[0].options.maxCalls).toBe(SillyAgentRunner.MAX_TOOL_CALLS);
-        expect(calls.saved[0]).toHaveLength(SillyAgentRunner.MAX_TOOL_CALLS);
+        expect(calls.executed).toHaveLength(SillyAgentRunner.MAX_TOOL_CALLS);
+        expect(calls.saved[0]).toHaveLength(SillyAgentRunner.MAX_TOOL_CALLS + 1);
+        expect(calls.saved[0].at(-1).name).toBe('agent_tool_budget');
+        expect(calls.errors).toHaveLength(1);
         expect(steps).toBe(2);
     });
 
