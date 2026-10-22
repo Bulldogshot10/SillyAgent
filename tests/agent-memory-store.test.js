@@ -520,6 +520,46 @@ describe('MemoryStore', () => {
         expect(store.listMemories({ scope: 'chat', scopeId: 'forget-evidence-chat' })).toHaveLength(0);
     });
 
+    test('applies forgetting and current-evidence checks to legacy dreaming proposals', async () => {
+        const store = await createMemoryStore();
+        const captured = store.captureTurn({
+            scopeId: 'dreaming-forget-chat',
+            role: 'user',
+            content: 'I prefer jasmine tea.',
+            captureKey: 'dreaming-forget-turn',
+        });
+        const accepted = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'dreaming-forget-chat',
+            content: 'The user prefers jasmine tea.',
+            kind: 'event',
+            metadata: {
+                origin: 'dreaming',
+                evidenceEventIds: [captured.event.id],
+            },
+            requireApproval: false,
+            requireCurrentEvidenceIds: [captured.event.id],
+        });
+        expect(accepted.memory).not.toBeNull();
+        expect(store.deleteMemory(accepted.memory.id)).toBe(true);
+
+        const rewritten = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'dreaming-forget-chat',
+            content: 'Jasmine tea is preferred by the user.',
+            kind: 'event',
+            metadata: {
+                origin: 'dreaming',
+                evidenceEventIds: [captured.event.id],
+            },
+            requireApproval: false,
+            requireCurrentEvidenceIds: [captured.event.id],
+        });
+
+        expect(rewritten.forgottenEvidence).toBe(true);
+        expect(rewritten.memory).toBeNull();
+    });
+
     test('keeps explicit proposal rejection authoritative for the same evidence', async () => {
         const store = await createMemoryStore();
         const captured = store.captureTurn({
