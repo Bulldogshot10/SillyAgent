@@ -151,6 +151,38 @@ describe('RoleplayStateStore', () => {
         expect(store.getHistory({ stateType: 'scene', scopeId: 'chat-to-delete' })).toHaveLength(0);
     });
 
+    test('deletes character-owned state without deleting chat or world partitions', async () => {
+        store = await RoleplayStateStore.open(':memory:');
+        store.updateState({
+            stateType: 'character',
+            scopeId: 'julia.png',
+            expectedVersion: 0,
+            patch: { condition: 'injured' },
+        });
+        store.updateState({
+            stateType: 'character',
+            scopeId: 'bella.png',
+            expectedVersion: 0,
+            patch: { condition: 'rested' },
+        });
+        store.updateState({
+            stateType: 'scene',
+            scopeId: 'character-chat-julia',
+            expectedVersion: 0,
+            patch: { summary: 'This chat scene remains independently managed.' },
+        });
+
+        expect(store.deleteCharacterPartition('julia.png')).toEqual({
+            deletedStates: 1,
+            deletedEvents: 1,
+        });
+        expect(store.getState({ stateType: 'character', scopeId: 'julia.png' }).state).toEqual({});
+        expect(store.getState({ stateType: 'character', scopeId: 'bella.png' }).state)
+            .toEqual({ condition: 'rested' });
+        expect(store.getState({ stateType: 'scene', scopeId: 'character-chat-julia' }).state)
+            .toEqual({ summary: 'This chat scene remains independently managed.' });
+    });
+
     test('requires an expected version at the persistent state write boundary', async () => {
         store = await RoleplayStateStore.open(':memory:');
 
