@@ -166,6 +166,7 @@ function applyMemoryCandidates(store, job, candidates, events, existingMemories)
     const accepted = [];
     for (const candidate of candidates) {
         if (!validString(candidate?.content, 4000) || containsCredential(candidate.content)
+            || (typeof candidate.updateReason === 'string' && containsCredential(candidate.updateReason))
             || !validEvidenceIds(candidate, evidenceIds) || !ALLOWED_KINDS.has(candidate.kind)
             || !['character', 'chat'].includes(candidate.scope)
             || (candidate.scope === 'character' && !job.characterId)
