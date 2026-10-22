@@ -357,6 +357,10 @@ describe('MemoryStore', () => {
         expect(() => store.proposeMemory({ scope: 'chat', content: 'A memory' })).toThrow(/scope ID/);
         expect(() => store.proposeMemory({ scope: 'user', content: '   ' })).toThrow(/characters/);
         expect(() => store.proposeMemory({ scope: 'user', content: 'A memory', importance: 6 })).toThrow(/importance/);
+        expect(() => store.proposeMemory({
+            scope: 'user',
+            content: 'Use this API key sk-12345678901234567890 for the integration.',
+        })).toThrow(/credential-like secrets/);
     });
 
     test('searches CJK memories by substring, including short queries', async () => {
