@@ -479,6 +479,47 @@ describe('MemoryStore', () => {
         expect(store.listMemories({ scope: 'chat', scopeId: 'forget-chat' })).toHaveLength(0);
     });
 
+    test('prevents deleted memory from being reconstructed from its original evidence', async () => {
+        const store = await createMemoryStore();
+        const captured = store.captureTurn({
+            scopeId: 'forget-evidence-chat',
+            role: 'user',
+            content: 'I prefer jasmine tea.',
+            captureKey: 'forget-evidence-turn',
+        });
+        const accepted = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'forget-evidence-chat',
+            content: 'The user prefers jasmine tea.',
+            kind: 'preference',
+            metadata: {
+                origin: 'background_reflection',
+                evidenceEventIds: [captured.event.id],
+            },
+            requireApproval: false,
+            requireCurrentEvidenceIds: [captured.event.id],
+        });
+        expect(accepted.memory).not.toBeNull();
+        expect(store.deleteMemory(accepted.memory.id)).toBe(true);
+
+        const paraphrase = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'forget-evidence-chat',
+            content: 'Jasmine tea is the user’s preferred tea.',
+            kind: 'preference',
+            metadata: {
+                origin: 'background_reflection',
+                evidenceEventIds: [captured.event.id],
+            },
+            requireApproval: false,
+            requireCurrentEvidenceIds: [captured.event.id],
+        });
+
+        expect(paraphrase.forgottenEvidence).toBe(true);
+        expect(paraphrase.memory).toBeNull();
+        expect(store.listMemories({ scope: 'chat', scopeId: 'forget-evidence-chat' })).toHaveLength(0);
+    });
+
     test('rejects a proposal whose captured-turn evidence was cleared before persistence', async () => {
         const store = await createMemoryStore();
         const captured = store.captureTurn({
