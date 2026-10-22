@@ -520,6 +520,47 @@ describe('MemoryStore', () => {
         expect(store.listMemories({ scope: 'chat', scopeId: 'forget-evidence-chat' })).toHaveLength(0);
     });
 
+    test('keeps explicit proposal rejection authoritative for the same evidence', async () => {
+        const store = await createMemoryStore();
+        const captured = store.captureTurn({
+            scopeId: 'rejected-evidence-chat',
+            role: 'user',
+            content: 'I prefer jasmine tea.',
+            captureKey: 'rejected-evidence-turn',
+        });
+        const proposal = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'rejected-evidence-chat',
+            content: 'The user prefers jasmine tea.',
+            kind: 'preference',
+            metadata: {
+                origin: 'background_reflection',
+                evidenceEventIds: [captured.event.id],
+            },
+            requireApproval: true,
+            requireCurrentEvidenceIds: [captured.event.id],
+        });
+        expect(proposal.status).toBe('pending');
+        expect(store.reviewProposal(proposal.id, 'reject').proposal.status).toBe('rejected');
+
+        const rewritten = store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'rejected-evidence-chat',
+            content: 'Jasmine tea is the user’s favorite tea.',
+            kind: 'preference',
+            metadata: {
+                origin: 'background_reflection',
+                evidenceEventIds: [captured.event.id],
+            },
+            requireApproval: false,
+            requireCurrentEvidenceIds: [captured.event.id],
+        });
+
+        expect(rewritten.forgottenEvidence).toBe(true);
+        expect(rewritten.memory).toBeNull();
+        expect(store.listMemories({ scope: 'chat', scopeId: 'rejected-evidence-chat' })).toHaveLength(0);
+    });
+
     test('rejects a proposal whose captured-turn evidence was cleared before persistence', async () => {
         const store = await createMemoryStore();
         const captured = store.captureTurn({
