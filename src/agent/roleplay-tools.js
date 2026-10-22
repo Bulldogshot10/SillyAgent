@@ -95,6 +95,13 @@ function requireActiveCharacter(context) {
     return context.activeCharacterId;
 }
 
+function requireActiveWorld(context) {
+    if (typeof context?.activeWorldId === 'string' && context.activeWorldId) {
+        return context.activeWorldId;
+    }
+    return requireActiveChat(context);
+}
+
 function summarizeState(result) {
     return {
         type: result.stateType,
@@ -202,7 +209,11 @@ function registerStateReader(registry, { name, description, stateType, character
         timeoutMs: 2000,
         inputSchema: STATE_READ_SCHEMA,
         execute: async ({ input, context }) => {
-            const scopeId = characterScoped ? requireActiveCharacter(context) : requireActiveChat(context);
+            const scopeId = characterScoped
+                ? requireActiveCharacter(context)
+                : stateType === 'world'
+                    ? requireActiveWorld(context)
+                    : requireActiveChat(context);
             return summarizeState(context.roleplayStateStore.getState({
                 stateType,
                 scopeId,
@@ -222,7 +233,11 @@ function registerStateWriter(registry, { name, description, stateType, character
         timeoutMs: 3000,
         inputSchema: STATE_WRITE_SCHEMA,
         execute: async ({ input, context }) => {
-            const scopeId = characterScoped ? requireActiveCharacter(context) : requireActiveChat(context);
+            const scopeId = characterScoped
+                ? requireActiveCharacter(context)
+                : stateType === 'world'
+                    ? requireActiveWorld(context)
+                    : requireActiveChat(context);
             const updated = context.roleplayStateStore.updateState({
                 stateType,
                 scopeId,
@@ -244,7 +259,7 @@ function registerStateWriter(registry, { name, description, stateType, character
 export function registerRoleplayTools(registry = toolRegistry) {
     registerStateReader(registry, {
         name: 'world_get_state',
-        description: 'Read the authoritative current world state for the active chat. Use before major scene changes to avoid continuity errors. Returns state plus a version number for safe updates.',
+        description: 'Read the authoritative state for the active roleplay world. When active World Info books exist, world state persists across chats using the same active book set; without active books it falls back to the current chat. Use before major scene changes and pass the returned version when writing.',
         stateType: 'world',
     });
     registerStateReader(registry, {
@@ -255,7 +270,7 @@ export function registerRoleplayTools(registry = toolRegistry) {
     });
     registerStateWriter(registry, {
         name: 'world_update_state',
-        description: 'Persist durable changes to the active roleplay world: location facts, objects, factions, consequences, shared resources, and other canon established in the chat. Patch only supported, evidenced changes. Use null to remove a key. Read the latest world state first and pass its version as expectedVersion when available.',
+        description: 'Persist durable changes to the active roleplay world: location facts, objects, factions, consequences, shared resources, and other canon established in the narrative. The active World Info book set defines the world partition when available; otherwise state is chat-scoped. Patch only evidenced changes, use null to remove stale keys, and pass the latest state version as expectedVersion.',
         stateType: 'world',
     });
     registerStateReader(registry, {
