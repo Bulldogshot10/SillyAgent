@@ -42,7 +42,7 @@ function validateSchemaDefinition(schema, depth = 0) {
             throw new TypeError('Object schema required must be an array of property names.');
         }
 
-        if (new Set(required).size !== required.length || required.some(name => !(name in properties))) {
+        if (new Set(required).size !== required.length || required.some(name => !Object.hasOwn(properties, name))) {
             throw new TypeError('Object schema required entries must be unique declared properties.');
         }
 
