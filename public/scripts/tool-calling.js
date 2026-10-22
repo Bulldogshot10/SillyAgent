@@ -459,8 +459,7 @@ export class ToolManager {
                 continue;
             }
             if (!previousSignature && this.#tools.has(localName)) {
-                console.warn(`[ToolManager] Skipping server tool "${definition.name}" because "${localName}" is already registered locally.`);
-                continue;
+                console.warn(`[ToolManager] Replacing local tool "${localName}" with the reserved server-owned SillyAgent tool.`);
             }
 
             this.#tools.delete(localName);
