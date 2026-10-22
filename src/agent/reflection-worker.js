@@ -210,8 +210,9 @@ function applyMemoryCandidates(store, job, candidates, events, existingMemories)
                 updateReason: supersedesIds.length ? candidate.updateReason.trim() : undefined,
             },
             requireApproval: false,
+            requireCurrentEvidenceIds: evidenceEventIds,
         });
-        if (!proposal.memory || proposal.duplicate) continue;
+        if (!proposal.memory || proposal.duplicate || proposal.staleEvidence || proposal.forgotten) continue;
 
         for (const previousMemoryId of supersedesIds) {
             try {
@@ -287,17 +288,33 @@ export async function runReflectionWorkerOnce({ store, directories, getSkillStor
         const messages = buildReflectionMessages(job, events, existingMemories);
         const response = await requestReflectionCompletion({ directories, config: state, messages });
         const result = parseModelJson(response);
-        const memoriesAccepted = applyMemoryCandidates(store, job, result.memories, events, existingMemories);
-        let skillsCreated = [];
+        let skillStore = null;
         if (job.characterId) {
             try {
-                const skillStore = await getSkillStore(job.characterId);
-                skillsCreated = applySkillCandidates(skillStore, job, result.skills, events);
+                // Resolve the skill database before the final evidence check. There must
+                // be no asynchronous gap between revalidation and applying candidates.
+                skillStore = await getSkillStore(job.characterId);
             } catch (error) {
                 // Memory extraction remains useful even if the character skill database is unavailable.
                 console.warn('[SillyAgent reflection] Skill updates skipped:', error?.message || error);
             }
         }
+
+        // The provider call is an async trust boundary: the user may have cleared
+        // captured history or deleted a memory while it was in flight. Revalidate
+        // evidence and existing memories against persistent storage before writing.
+        const liveEvents = store.listCapturedTurnsByIds(events.map(event => event.id));
+        if (!liveEvents.length) {
+            store.completeReflectionJob(job.id, job.claimToken);
+            return true;
+        }
+        const liveCharacterMemories = job.characterId
+            ? store.listMemories({ scope: 'character', scopeId: job.characterId, limit: 80 })
+            : [];
+        const liveChatMemories = store.listMemories({ scope: 'chat', scopeId: job.scopeId, limit: 80 });
+        const liveExistingMemories = [...new Map([...liveCharacterMemories, ...liveChatMemories].map(memory => [memory.id, memory])).values()];
+        const memoriesAccepted = applyMemoryCandidates(store, job, result.memories, liveEvents, liveExistingMemories);
+        const skillsCreated = applySkillCandidates(skillStore, job, result.skills, liveEvents);
         store.recordEvent({
             scope: 'chat',
             scopeId: job.scopeId,
