@@ -270,6 +270,11 @@ export class ToolManager {
             [name, description, parameters, action] = arguments;
         }
 
+        if (this.#serverTools.has(name)) {
+            console.warn(`[ToolManager] Ignoring an attempt to overwrite server-owned SillyAgent tool "${name}".`);
+            return;
+        }
+
         if (this.#tools.has(name)) {
             console.warn(`[ToolManager] A tool with the name "${name}" has already been registered. The definition will be overwritten.`);
         }
@@ -459,6 +464,7 @@ export class ToolManager {
             }
 
             this.#tools.delete(localName);
+            this.#serverTools.delete(localName);
             const serverToolName = definition.name;
             this.registerFunctionTool({
                 name: localName,
