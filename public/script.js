@@ -4315,7 +4315,7 @@ function removeLastMessage() {
  * @property {AbortSignal} [signal] Abort signal to cancel the generation. If not provided, will create a new AbortController.
  * @property {string} [quietImage] Image URL to use for the quiet prompt (defaults to empty string)
  * @property {string} [quietName] Name to use for the quiet prompt (defaults to "System:")
- * @property {number} [depth] Recursion depth for the generation. Used to prevent infinite loops in tool calls.
+ * @property {number} [depth] Internal SillyAgent round depth used to avoid repeating top-level input commands.
  * @property {JsonSchema} [jsonSchema] JSON schema to use for the structured generation. Usually requires a special instruction.
  */
 
@@ -4327,7 +4327,7 @@ function removeLastMessage() {
  * @param {boolean} dryRun Whether to actually generate a message or just assemble the prompt
  * @returns {Promise<any>} Returns a promise that resolves when the text is done generating.
  */
-async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0 } = {}, dryRun = false) {
+async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, allowToolCalls = true } = {}, dryRun = false) {
     console.log('Generate entered');
     setGenerationProgress(0);
     generation_started = new Date();
@@ -4532,7 +4532,7 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
 
     // Collect messages with usable content
     const canUseTools = ToolManager.isToolCallingSupported();
-    const canPerformToolCalls = !dryRun && ToolManager.canPerformToolCalls(type);
+    const canPerformToolCalls = !dryRun && ToolManager.canPerformToolCalls(type, null, null, allowToolCalls);
     let coreChat = chat.filter(x => !x.is_system || (canUseTools && Array.isArray(x.extra?.tool_invocations)));
     if (type === 'swipe') {
         coreChat.pop();
@@ -5339,6 +5339,7 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
                 jailbreakPromptOverride: jailbreak,
                 messages: oaiMessages,
                 messageExamples: oaiMessageExamples,
+                allowToolCalls,
             }, dryRun);
             generate_data = { prompt: prompt };
 
@@ -5430,7 +5431,7 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
                 streamingProcessor.firstMessageText = '';
             }
 
-            streamingProcessor.generator = await sendStreamingRequest(type, generate_data, { jsonSchema });
+            streamingProcessor.generator = await sendStreamingRequest(type, generate_data, { jsonSchema, allowToolCalls });
 
             hideSwipeButtons();
             let getMessage = await streamingProcessor.generate();
@@ -5475,7 +5476,7 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
                 });
             }
         } else {
-            return await sendGenerationRequest(type, generate_data, { jsonSchema });
+            return await sendGenerationRequest(type, generate_data, { jsonSchema, allowToolCalls });
         }
     }
 
@@ -5705,20 +5706,29 @@ async function executeHarnessToolCall(toolCall, { reasoningText = null } = {}) {
 }
 
 export async function Generate(type, options = {}, dryRun = false) {
+    const configuredRounds = Number(oai_settings.tool_call_recurse_limit);
+    const maxToolRounds = Number.isFinite(configuredRounds)
+        ? Math.max(1, Math.min(SillyAgentRunner.MAX_TOOL_ROUNDS, Math.floor(configuredRounds)))
+        : SillyAgentRunner.MAX_TOOL_ROUNDS;
+
     const runner = new SillyAgentRunner({
         extractToolCalls: data => ToolManager.extractToolCalls(data),
         executeToolCall: executeHarnessToolCall,
         saveToolInvocations: invocations => ToolManager.saveFunctionToolInvocations(invocations),
-        setToolCallsAllowed: allowed => ToolManager.setHarnessToolCallsAllowed(allowed),
         onToolErrors: errors => ToolManager.showToolCallError(errors),
         onStop: generationType => unblockGeneration(generationType),
+        maxToolRounds,
     });
 
     return await runner.run({
         type,
         generationOptions: options,
         dryRun,
-        generateStep: async (stepType, stepOptions) => await generateStep(stepType, stepOptions, dryRun),
+        generateStep: async (stepType, stepOptions, policy) => await generateStep(
+            stepType,
+            { ...stepOptions, allowToolCalls: policy.allowToolCalls },
+            dryRun,
+        ),
     });
 }
 

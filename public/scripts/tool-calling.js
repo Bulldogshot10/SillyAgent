@@ -250,18 +250,7 @@ export class ToolManager {
     /** @type {Map<string, string>} Names and signatures of tools imported from the SillyAgent server. */
     static #serverTools = new Map();
 
-    // Per-turn gate controlled by SillyAgentRunner. Provider payload builders
-    // consult this before including tools, so exhausted rounds get a true
-    // tool-free final generation rather than another recursive call.
-    static #harnessToolCallsAllowed = true;
-
     static #INPUT_DELTA_KEY = '__input_json_delta';
-
-    /**
-     * The maximum number of times to recurse when parsing tool calls.
-     * @type {number}
-     */
-    static RECURSE_LIMIT = 5;
 
     /**
      * Returns an Array of all tools that have been registered.
@@ -788,22 +777,22 @@ export class ToolManager {
     }
 
     /**
-     * Checks if tool calls can be performed for the current settings and generation type.
+     * Checks whether this generation step may advertise executable tools.
+     * The allow/deny decision is supplied per generation step, never stored on
+     * the shared ToolManager singleton. Overlapping generations cannot toggle
+     * each other's tool availability.
      * @param {string} type Generation type
      * @param {ChatCompletionSettings} settings Optional chat completion settings
      * @param {string} model Optional model name
-     * @returns {boolean} Whether tool calls can be performed for the given type
+     * @param {boolean} allowToolCalls Per-step policy supplied by SillyAgentRunner.
+     * @returns {boolean} Whether tool calls can be performed for this step.
      */
-    static setHarnessToolCallsAllowed(allowed) {
-        this.#harnessToolCallsAllowed = allowed === true;
-    }
-
-    static canPerformToolCalls(type, settings = null, model = null) {
+    static canPerformToolCalls(type, settings = null, model = null, allowToolCalls = true) {
         settings = settings ?? oai_settings;
         model = model ?? getChatCompletionModel(settings);
+        if (allowToolCalls !== true) return false;
         const noToolCallTypes = ['impersonate', 'quiet', 'continue'];
-        const isSupported = ToolManager.isToolCallingSupported(settings, model);
-        return this.#harnessToolCallsAllowed && isSupported && !noToolCallTypes.includes(type);
+        return ToolManager.isToolCallingSupported(settings, model) && !noToolCallTypes.includes(type);
     }
 
     /**

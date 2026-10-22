@@ -500,7 +500,7 @@ const default_settings = {
     bypass_status_check: false,
     continue_prefill: false,
     function_calling: false,
-    tool_call_recurse_limit: 5,
+    tool_call_recurse_limit: 8,
     names_behavior: character_names_behavior.DEFAULT,
     continue_postfix: continue_postfix_types.SPACE,
     custom_prompt_post_processing: custom_prompt_post_processing_types.NONE,
@@ -1182,7 +1182,7 @@ export function getPromptRole(role) {
  * @param {object[]} options.messageExamples - Array containing all message examples.
  * @returns {Promise<void>}
  */
-async function populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples }) {
+async function populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, allowToolCalls = true }) {
     // Helper function for preparing a prompt, that already exists within the prompt collection, for completion
     const addToChatCompletion = async (source, target = null) => {
         // We need the prompts array to determine a position for the source.
@@ -1307,7 +1307,7 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
     }
 
     // Pre-allocation of tokens for tool data
-    if (ToolManager.canPerformToolCalls(type)) {
+    if (ToolManager.canPerformToolCalls(type, null, null, allowToolCalls)) {
         const toolData = {};
         await ToolManager.registerFunctionToolsOpenAI(toolData);
         const toolMessage = [{ role: 'user', content: JSON.stringify(toolData) }];
@@ -1556,6 +1556,7 @@ export async function prepareOpenAIMessages({
     jailbreakPromptOverride,
     messages,
     messageExamples,
+    allowToolCalls = true,
 }, dryRun) {
     // Without a character selected, there is no way to accurately calculate tokens
     if (!promptManager.activeCharacter && dryRun) return [null, false];
@@ -1584,7 +1585,7 @@ export async function prepareOpenAIMessages({
         });
 
         // Fill the chat completion with as much context as the budget allows
-        await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples });
+        await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, allowToolCalls });
     } catch (error) {
         if (error instanceof TokenBudgetExceededError) {
             toastr.error(t`Mandatory prompts exceed the context size.`);
@@ -2688,7 +2689,7 @@ function getVerbosity(settings = null) {
  * @param {import('../script.js').AdditionalRequestOptions} options Additional request options
  * @returns {Promise<object>} Final generation parameters object appropriate for the chat completion source
  */
-export async function createGenerationParameters(settings, model, type, messages, { jsonSchema = null } = {}) {
+export async function createGenerationParameters(settings, model, type, messages, { jsonSchema = null, allowToolCalls = true } = {}) {
     // HACK: Filter out null and non-object messages
     if (!Array.isArray(messages)) {
         throw new Error('messages must be an array');
@@ -2837,7 +2838,7 @@ export async function createGenerationParameters(settings, model, type, messages
         }
     }
 
-    if (!canMultiSwipe && ToolManager.canPerformToolCalls(type, settings, model)) {
+    if (!canMultiSwipe && ToolManager.canPerformToolCalls(type, settings, model, allowToolCalls)) {
         await ToolManager.registerFunctionToolsOpenAI(generate_data);
     }
 
@@ -3135,14 +3136,14 @@ export async function createGenerationParameters(settings, model, type, messages
  * @returns {Promise<unknown>}
  * @throws {Error}
  */
-async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null } = {}) {
+async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, allowToolCalls = true } = {}) {
     // Provide default abort signal
     if (!signal) {
         signal = new AbortController().signal;
     }
 
     const model = getChatCompletionModel(oai_settings);
-    const { generate_data, stream, canMultiSwipe } = await createGenerationParameters(oai_settings, model, type, messages, { jsonSchema });
+    const { generate_data, stream, canMultiSwipe } = await createGenerationParameters(oai_settings, model, type, messages, { jsonSchema, allowToolCalls });
     await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data);
 
     const generate_url = '/api/backends/chat-completions/generate';
@@ -7065,7 +7066,6 @@ export function initOpenAI() {
     $('#tool_call_recurse_limit').on('input', function () {
         oai_settings.tool_call_recurse_limit = Number($(this).val());
         $('#tool_call_recurse_limit_counter').val(oai_settings.tool_call_recurse_limit);
-        ToolManager.RECURSE_LIMIT = oai_settings.tool_call_recurse_limit;
         saveSettingsDebounced();
     });
 

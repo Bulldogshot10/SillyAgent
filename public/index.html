@@ -2016,15 +2016,15 @@
                                         </div>
                                         <div id="tool_call_recurse_limit_block" class="range-block wide100p">
                                             <div class="range-block-title">
-                                                <small data-i18n="Tool Call Recurse Limit">Tool Call Recurse Limit</small>
-                                                <div class="fa-solid fa-circle-info opacity50p margin5" data-i18n="[title]Maximum number of tool call recursion steps per generation." title="Maximum number of tool call recursion steps per generation."></div>
+                                                <small data-i18n="Agent Tool Rounds Per Turn">Agent Tool Rounds Per Turn</small>
+                                                <div class="fa-solid fa-circle-info opacity50p margin5" data-i18n="[title]Maximum number of agent tool rounds before a final tool-free response." title="Maximum number of agent tool rounds before a final tool-free response."></div>
                                             </div>
                                             <div class="range-block-range-and-counter">
                                                 <div class="range-block-range">
-                                                    <input type="range" id="tool_call_recurse_limit" name="tool_call_recurse_limit" min="1" max="50" step="1">
+                                                    <input type="range" id="tool_call_recurse_limit" name="tool_call_recurse_limit" min="1" max="8" step="1">
                                                 </div>
                                                 <div class="range-block-counter">
-                                                    <input type="number" min="1" max="50" step="1" data-for="tool_call_recurse_limit" id="tool_call_recurse_limit_counter">
+                                                    <input type="number" min="1" max="8" step="1" data-for="tool_call_recurse_limit" id="tool_call_recurse_limit_counter">
                                                 </div>
                                             </div>
                                         </div>

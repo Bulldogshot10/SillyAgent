@@ -2,7 +2,7 @@ import { afterEach, describe, expect, jest, test } from '@jest/globals';
 
 import { SillyAgentRunner } from '../public/scripts/agent-runner.js';
 
-function makeRunner(overrides = {}) {
+function makeRunner(overrides = {}, runnerOptions = {}) {
     const calls = {
         executed: [],
         saved: [],
@@ -26,9 +26,9 @@ function makeRunner(overrides = {}) {
             };
         },
         saveToolInvocations: async invocations => calls.saved.push(invocations),
-        setToolCallsAllowed: allowed => calls.policies.push(allowed),
         onToolErrors: errors => calls.errors.push(errors),
         onStop: type => calls.stops.push(type),
+        ...runnerOptions,
     });
     return { runner, calls };
 }
@@ -65,15 +65,17 @@ describe('SillyAgentRunner', () => {
         expect(steps.every(step => step.options.force_name2 === true)).toBe(true);
         expect(calls.executed.map(item => item.toolCall.function.arguments.step)).toEqual([1, 2]);
         expect(calls.saved).toHaveLength(2);
-        expect(calls.policies).toEqual([true, true, true, true]);
+        expect(steps.map(step => step.policy.allowToolCalls)).toEqual([true, true, true]);
     });
 
     test('turns off tool schemas after the round budget and performs a final tool-free generation', async () => {
         const { runner, calls } = makeRunner();
         let modelSteps = 0;
+        const policies = [];
         const result = await runner.run({
             type: 'normal',
             generateStep: async (_type, _options, policy) => {
+                policies.push(policy.allowToolCalls);
                 modelSteps += 1;
                 return policy.allowToolCalls
                     ? { __sillyAgentRunner: true, kind: 'tool_calls', responseData: [toolCall('step-' + modelSteps)] }
@@ -84,8 +86,9 @@ describe('SillyAgentRunner', () => {
         expect(result).toBe('budgeted final answer');
         expect(modelSteps).toBe(SillyAgentRunner.MAX_TOOL_ROUNDS + 1);
         expect(calls.executed).toHaveLength(SillyAgentRunner.MAX_TOOL_ROUNDS);
-        expect(calls.policies.at(-2)).toBe(false);
-        expect(calls.policies.at(-1)).toBe(true);
+        expect(policies).toHaveLength(SillyAgentRunner.MAX_TOOL_ROUNDS + 1);
+        expect(policies.slice(0, -1).every(Boolean)).toBe(true);
+        expect(policies.at(-1)).toBe(false);
     });
 
     test('does not spin if dispatch produces no user-visible tool results', async () => {
@@ -125,11 +128,40 @@ describe('SillyAgentRunner', () => {
         expect(steps).toBe(2);
     });
 
+    test('keeps concurrent runs on independent per-turn budgets without shared mutable gates', async () => {
+        const { runner: shortRunner } = makeRunner({}, { maxToolRounds: 1 });
+        const { runner: longRunner } = makeRunner({}, { maxToolRounds: 2 });
+        const shortPolicies = [];
+        const longPolicies = [];
+
+        const runWithPolicyHistory = async (runner, history) => runner.run({
+            type: 'normal',
+            generateStep: async (_type, _options, policy) => {
+                history.push(policy.allowToolCalls);
+                return policy.allowToolCalls
+                    ? { __sillyAgentRunner: true, kind: 'tool_calls', responseData: [toolCall('call-' + history.length)] }
+                    : 'final';
+            },
+        });
+
+        const [shortResult, longResult] = await Promise.all([
+            runWithPolicyHistory(shortRunner, shortPolicies),
+            runWithPolicyHistory(longRunner, longPolicies),
+        ]);
+
+        expect(shortResult).toBe('final');
+        expect(longResult).toBe('final');
+        expect(shortPolicies).toEqual([true, false]);
+        expect(longPolicies).toEqual([true, true, false]);
+    });
+
     test('forces excluded generation modes to single-step tool-free behavior', async () => {
         const { runner, calls } = makeRunner();
+        const policies = [];
         const result = await runner.run({
             type: 'quiet',
             generateStep: async (_type, _options, policy) => {
+                policies.push(policy.allowToolCalls);
                 expect(policy.allowToolCalls).toBe(false);
                 return 'quiet output';
             },
@@ -137,6 +169,6 @@ describe('SillyAgentRunner', () => {
 
         expect(result).toBe('quiet output');
         expect(calls.executed).toHaveLength(0);
-        expect(calls.policies).toEqual([false, true]);
+        expect(policies).toEqual([false]);
     });
 });
