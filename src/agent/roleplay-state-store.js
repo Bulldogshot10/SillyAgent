@@ -325,6 +325,35 @@ export class RoleplayStateStore {
         }
     }
 
+    /**
+     * Remove persistent state owned by a deleted character while preserving shared worlds and chats.
+     * @param {string} characterId Deleted character identifier.
+     * @returns {{deletedStates: number, deletedEvents: number}}
+     */
+    deleteCharacterPartition(characterId) {
+        const normalizedCharacterId = validateScopeId(characterId);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const deletedStates = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM roleplay_state WHERE state_type = ? AND scope_id = ?',
+            ).get('character', normalizedCharacterId).count;
+            const deletedEvents = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM roleplay_state_events WHERE state_type = ? AND scope_id = ?',
+            ).get('character', normalizedCharacterId).count;
+            this.#db.prepare(
+                'DELETE FROM roleplay_state_events WHERE state_type = ? AND scope_id = ?',
+            ).run('character', normalizedCharacterId);
+            this.#db.prepare(
+                'DELETE FROM roleplay_state WHERE state_type = ? AND scope_id = ?',
+            ).run('character', normalizedCharacterId);
+            this.#db.exec('COMMIT;');
+            return { deletedStates, deletedEvents };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
     getHistory({ stateType, scopeId, limit = 20 } = {}) {
         validateStateType(stateType);
         const normalizedScopeId = validateScopeId(scopeId);
