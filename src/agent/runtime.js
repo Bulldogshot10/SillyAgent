@@ -85,6 +85,65 @@ export async function deleteAgentChatPartitionIfPresent(input, chatId, character
     };
 }
 
+/**
+ * Purge all native harness data tied to a deleted character, including its
+ * physical chat partitions, character memory/state, and procedural skills.
+ * @param {string|object} input User directories.
+ * @param {string} characterId Character avatar identifier.
+ * @param {string[]} chatIds Existing chat IDs from the character's chat directory.
+ * @returns {Promise<object>} Cleanup counts by subsystem.
+ */
+export async function deleteAgentCharacterPartitionsIfPresent(input, characterId, chatIds = []) {
+    const { directories, root } = normalizeDirectories(input);
+    if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) {
+        throw new TypeError('A valid character ID is required to delete SillyAgent character data.');
+    }
+    if (!Array.isArray(chatIds) || chatIds.some(id => typeof id !== 'string' || !id.trim() || id.length > 256)) {
+        throw new TypeError('Character chat IDs must be an array of valid strings.');
+    }
+
+    const normalizedCharacterId = characterId.trim();
+    const uniqueChatIds = [...new Set(chatIds.map(id => id.trim()))];
+    const chatResults = [];
+    for (const chatId of uniqueChatIds) {
+        chatResults.push(await deleteAgentChatPartitionIfPresent(
+            { ...directories, root },
+            chatId,
+            normalizedCharacterId,
+        ));
+    }
+
+    const memoryDatabasePath = path.join(root, 'sillyagent', 'memory.sqlite');
+    const stateDatabasePath = path.join(root, 'sillyagent', 'roleplay-state.sqlite');
+    const skillPartition = createHash('sha256').update(normalizedCharacterId, 'utf8').digest('hex');
+    const skillDatabasePath = path.join(root, 'sillyagent', 'skills', skillPartition + '.sqlite');
+
+    let memory = null;
+    let roleplayState = null;
+    let skills = null;
+    if (memoryStores.has(memoryDatabasePath) || existsSync(memoryDatabasePath)) {
+        const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
+        memory = store.deleteCharacterPartition(normalizedCharacterId);
+    }
+    if (roleplayStateStores.has(stateDatabasePath) || existsSync(stateDatabasePath)) {
+        const store = await getAgentRoleplayStateStore({ ...directories, root });
+        roleplayState = store.deleteCharacterPartition(normalizedCharacterId);
+    }
+    if (skillStores.has(skillDatabasePath) || existsSync(skillDatabasePath)) {
+        const store = await getAgentSkillStore({ ...directories, root }, normalizedCharacterId);
+        skills = store.clearAll();
+    }
+
+    return {
+        characterId: normalizedCharacterId,
+        chatPartitionsProcessed: chatResults.length,
+        chatResults,
+        memory,
+        roleplayState,
+        skills,
+    };
+}
+
 export async function getAgentSkillStore(input, characterId) {
     const { root } = normalizeDirectories(input);
     if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) {
