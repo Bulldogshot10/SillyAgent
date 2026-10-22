@@ -148,4 +148,20 @@ describe('SkillStore', () => {
         expect(activated.requiresApproval).toBe(false);
         expect(skills.readSkill('api-debugging').version).toBe(2);
     });
+    test('clears a character skill database as one transaction', async () => {
+        const skills = await createStore();
+        skills.proposeSkill(originalSkill);
+        expect(skills.readSkill('api-debugging')).not.toBeNull();
+        expect(skills.getEvents({ slug: 'api-debugging' }).length).toBeGreaterThan(0);
+
+        const result = skills.clearAll();
+
+        expect(result.skills).toBe(1);
+        expect(result.revisions).toBe(1);
+        expect(result.events).toBeGreaterThan(0);
+        expect(skills.readSkill('api-debugging')).toBeNull();
+        expect(skills.getHistory('api-debugging')).toHaveLength(0);
+        expect(skills.getEvents()).toHaveLength(0);
+    });
+
 });
