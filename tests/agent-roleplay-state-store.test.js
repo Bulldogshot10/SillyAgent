@@ -101,6 +101,14 @@ describe('RoleplayStateStore', () => {
         expect(second.state.location).toBe('North greenhouse');
         expect(second.state.openThreads).toEqual(['Where is the gardener?']);
         expect(second.state.lastResolvedThreads).toEqual(['Who broke the lantern?']);
+
+        const third = store.advanceScene({
+            scopeId: 'chat-one',
+            summary: 'They leave the greenhouse and follow the muddy footprints.',
+            expectedVersion: second.version,
+        });
+        expect(third.state.sceneNumber).toBe(3);
+        expect(third.state.lastResolvedThreads).toEqual([]);
     });
 
     test('rejects unsafe keys, credential-like strings, oversized patches, and invalid scopes', async () => {
