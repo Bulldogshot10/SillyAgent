@@ -58,12 +58,31 @@ export async function deleteAgentChatPartitionIfPresent(input, chatId, character
     const { directories, root } = normalizeDirectories(input);
     const scopeId = getAgentScopedChatId(chatId, characterId);
     if (!scopeId) throw new TypeError('A valid chat ID is required to delete SillyAgent chat data.');
-    const databasePath = path.join(root, 'sillyagent', 'memory.sqlite');
-    if (!memoryStores.has(databasePath) && !existsSync(databasePath)) {
-        return { found: false, clearedTurns: 0, deletedMemories: 0, deletedProposals: 0, cancelledJobs: 0 };
+
+    const memoryDatabasePath = path.join(root, 'sillyagent', 'memory.sqlite');
+    const stateDatabasePath = path.join(root, 'sillyagent', 'roleplay-state.sqlite');
+    const memoryExists = memoryStores.has(memoryDatabasePath) || existsSync(memoryDatabasePath);
+    const stateExists = roleplayStateStores.has(stateDatabasePath) || existsSync(stateDatabasePath);
+
+    let memory = null;
+    let roleplayState = null;
+    if (memoryExists) {
+        const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
+        memory = store.deleteChatPartition(scopeId);
     }
-    const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
-    return { found: true, ...store.deleteChatPartition(scopeId) };
+    if (stateExists) {
+        const store = await getAgentRoleplayStateStore({ ...directories, root });
+        roleplayState = store.deleteChatPartition(scopeId);
+    }
+
+    return {
+        found: memoryExists || stateExists,
+        clearedTurns: memory?.clearedTurns ?? 0,
+        deletedMemories: memory?.deletedMemories ?? 0,
+        deletedProposals: memory?.deletedProposals ?? 0,
+        cancelledJobs: memory?.cancelledJobs ?? 0,
+        roleplayState,
+    };
 }
 
 export async function getAgentSkillStore(input, characterId) {
