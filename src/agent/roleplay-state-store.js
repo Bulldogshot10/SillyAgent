@@ -295,6 +295,36 @@ export class RoleplayStateStore {
         });
     }
 
+    /**
+     * Remove per-chat scene state and chat-scoped fallback world state when a chat is deleted.
+     * Shared-world state and character-scoped state remain independent partitions.
+     * @param {string} scopeId Deleted chat identifier.
+     * @returns {{deletedStates: number, deletedEvents: number}}
+     */
+    deleteChatPartition(scopeId) {
+        const normalizedScopeId = validateScopeId(scopeId);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const deletedStates = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM roleplay_state WHERE state_type IN (?, ?) AND scope_id = ?',
+            ).get('scene', 'world', normalizedScopeId).count;
+            const deletedEvents = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM roleplay_state_events WHERE state_type IN (?, ?) AND scope_id = ?',
+            ).get('scene', 'world', normalizedScopeId).count;
+            this.#db.prepare(
+                'DELETE FROM roleplay_state_events WHERE state_type IN (?, ?) AND scope_id = ?',
+            ).run('scene', 'world', normalizedScopeId);
+            this.#db.prepare(
+                'DELETE FROM roleplay_state WHERE state_type IN (?, ?) AND scope_id = ?',
+            ).run('scene', 'world', normalizedScopeId);
+            this.#db.exec('COMMIT;');
+            return { deletedStates, deletedEvents };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
     getHistory({ stateType, scopeId, limit = 20 } = {}) {
         validateStateType(stateType);
         const normalizedScopeId = validateScopeId(scopeId);
