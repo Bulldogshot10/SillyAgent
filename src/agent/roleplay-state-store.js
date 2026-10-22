@@ -215,8 +215,8 @@ export class RoleplayStateStore {
         validateStateType(stateType);
         const normalizedScopeId = validateScopeId(scopeId);
         const normalizedPatch = normalizePatch(patch);
-        if (expectedVersion !== undefined && (!Number.isInteger(expectedVersion) || expectedVersion < 0)) {
-            throw new TypeError('expectedVersion must be a non-negative integer.');
+        if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+            throw new TypeError('expectedVersion is required and must be a non-negative integer.');
         }
         if (typeof source !== 'string' || !source.trim() || source.length > 80) {
             throw new TypeError('State change source must contain 1-80 characters.');
