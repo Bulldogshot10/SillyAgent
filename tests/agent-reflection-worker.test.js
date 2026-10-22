@@ -293,6 +293,56 @@ describe('server-owned reflection worker', () => {
         expect(store.listReflectionJobs({ status: 'completed' })).toHaveLength(1);
     });
 
+    test('does not persist memory or skills when captured history is cleared during the provider request', async () => {
+        const events = await captureTurns();
+        const modelResult = {
+            memories: [{
+                content: 'The user is learning Rust to build a file-management CLI.',
+                kind: 'goal',
+                importance: 4,
+                scope: 'character',
+                evidenceIds: [events[0].id, events[2].id],
+            }],
+            skills: [{
+                slug: 'rust-cli-import-recovery',
+                name: 'Rust CLI import recovery',
+                description: 'A repeatable process for debugging unresolved imports in a Rust CLI.',
+                content: 'Check the toolchain, reproduce the compiler failure, correct the module path, then rerun the command to verify the error is gone.',
+                changeReason: 'The captured workflow shows the correction succeeded.',
+                evidenceIds: [events[1].id, events[3].id],
+            }],
+        };
+        let markFetchStarted;
+        let releaseProvider;
+        const fetchStarted = new Promise(resolve => { markFetchStarted = resolve; });
+        const providerGate = new Promise(resolve => { releaseProvider = resolve; });
+        globalThis.fetch = jest.fn(async () => {
+            markFetchStarted();
+            await providerGate;
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    choices: [{ message: { content: JSON.stringify(modelResult) } }],
+                }),
+            };
+        });
+
+        const worker = runReflectionWorkerOnce({
+            store,
+            directories: { root },
+            getSkillStore: async () => skills,
+        });
+        await fetchStarted;
+        expect(store.clearCapturedTurns('character-chat-fixture')).toBe(4);
+        releaseProvider();
+        await worker;
+
+        expect(store.listMemories({ scope: 'character', scopeId: 'julia.png' })).toHaveLength(0);
+        expect(skills.listSkills({ query: 'Rust CLI' })).toHaveLength(0);
+        expect(store.listReflectionJobs({ status: 'completed' })).toHaveLength(1);
+    });
+
     test('leaves a failed provider attempt pending for durable retry', async () => {
         await captureTurns();
         globalThis.fetch = jest.fn(async () => ({
