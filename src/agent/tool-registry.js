@@ -339,8 +339,10 @@ export class ToolRegistry {
                 durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
             };
         } catch (error) {
-            const code = error?.code === 'tool_timeout' ? 'tool_timeout' : 'tool_failed';
-            const message = code === 'tool_timeout' ? error.message : 'Tool execution failed.';
+            const code = ['tool_timeout', 'state_conflict'].includes(error?.code) ? error.code : 'tool_failed';
+            const message = code === 'tool_timeout' || code === 'state_conflict'
+                ? error.message
+                : 'Tool execution failed.';
             return errorResult(name, code, message, performance.now() - startedAt);
         } finally {
             clearTimeout(timeoutId);
