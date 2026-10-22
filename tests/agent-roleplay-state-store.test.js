@@ -111,6 +111,46 @@ describe('RoleplayStateStore', () => {
         expect(third.state.lastResolvedThreads).toEqual([]);
     });
 
+    test('removes chat-owned scene and fallback world state without deleting shared or character state', async () => {
+        store = await RoleplayStateStore.open(':memory:');
+        store.updateState({
+            stateType: 'scene',
+            scopeId: 'chat-to-delete',
+            expectedVersion: 0,
+            patch: { sceneNumber: 4, summary: 'Private scene recap.' },
+        });
+        store.updateState({
+            stateType: 'world',
+            scopeId: 'chat-to-delete',
+            expectedVersion: 0,
+            patch: { location: 'Chat-local fallback world' },
+        });
+        store.updateState({
+            stateType: 'world',
+            scopeId: 'world-shared',
+            expectedVersion: 0,
+            patch: { location: 'Shared setting' },
+        });
+        store.updateState({
+            stateType: 'character',
+            scopeId: 'julia.png',
+            expectedVersion: 0,
+            patch: { condition: 'rested' },
+        });
+
+        expect(store.deleteChatPartition('chat-to-delete')).toEqual({
+            deletedStates: 2,
+            deletedEvents: 2,
+        });
+        expect(store.getState({ stateType: 'scene', scopeId: 'chat-to-delete' }).state).toEqual({});
+        expect(store.getState({ stateType: 'world', scopeId: 'chat-to-delete' }).state).toEqual({});
+        expect(store.getState({ stateType: 'world', scopeId: 'world-shared' }).state)
+            .toEqual({ location: 'Shared setting' });
+        expect(store.getState({ stateType: 'character', scopeId: 'julia.png' }).state)
+            .toEqual({ condition: 'rested' });
+        expect(store.getHistory({ stateType: 'scene', scopeId: 'chat-to-delete' })).toHaveLength(0);
+    });
+
     test('requires an expected version at the persistent state write boundary', async () => {
         store = await RoleplayStateStore.open(':memory:');
 
