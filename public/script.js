@@ -466,7 +466,7 @@ export function getSillyAgentActiveWorldNames() {
     if (Array.isArray(chat_metadata?.world_info)) names.push(...chat_metadata.world_info);
     else if (typeof chat_metadata?.world_info === 'string') names.push(chat_metadata.world_info);
 
-    const character = characters[this_chid];
+    const character = selected_group ? null : characters[this_chid];
     const primaryWorld = character?.data?.extensions?.world;
     if (typeof primaryWorld === 'string' && primaryWorld.trim()) names.push(primaryWorld);
 
