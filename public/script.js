@@ -264,6 +264,7 @@ import { AbortReason } from './scripts/util/AbortReason.js';
 import { initSystemPrompts } from './scripts/sysprompt.js';
 import { registerExtensionSlashCommands as initExtensionSlashCommands } from './scripts/extensions-slashcommands.js';
 import { ToolManager } from './scripts/tool-calling.js';
+import { SillyAgentRunner } from './scripts/agent-runner.js';
 import { addShowdownPatch } from './scripts/util/showdown-patch.js';
 import { applyBrowserFixes } from './scripts/browser-fixes.js';
 import { initServerHistory } from './scripts/server-history.js';
@@ -4326,7 +4327,7 @@ function removeLastMessage() {
  * @param {boolean} dryRun Whether to actually generate a message or just assemble the prompt
  * @returns {Promise<any>} Returns a promise that resolves when the text is done generating.
  */
-export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0 } = {}, dryRun = false) {
+async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0 } = {}, dryRun = false) {
     console.log('Generate entered');
     setGenerationProgress(0);
     generation_started = new Date();
@@ -4531,7 +4532,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
     // Collect messages with usable content
     const canUseTools = ToolManager.isToolCallingSupported();
-    const canPerformToolCalls = !dryRun && ToolManager.canPerformToolCalls(type) && depth < ToolManager.RECURSE_LIMIT;
+    const canPerformToolCalls = !dryRun && ToolManager.canPerformToolCalls(type);
     let coreChat = chat.filter(x => !x.is_system || (canUseTools && Array.isArray(x.extra?.tool_invocations)));
     if (type === 'swipe') {
         coreChat.pop();
@@ -5450,28 +5451,17 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 const lastMessage = chat[chat.length - 1];
                 const hasToolCalls = ToolManager.hasToolCalls(streamingProcessor.toolCalls);
                 const shouldDeleteMessage = type !== 'swipe' && ['', '...'].includes(lastMessage?.mes) && !lastMessage?.extra?.reasoning && ['', '...'].includes(streamingProcessor?.result);
-                hasToolCalls && shouldDeleteMessage && await deleteLastMessage();
-                if (hasToolCalls && !shouldDeleteMessage) {
-                    await streamingProcessor.finalizeIntermediaryMessage(streamingProcessor.messageId, getMessage, { unlockUI: false });
-                }
-                const invocationResult = await ToolManager.invokeFunctionTools(streamingProcessor.toolCalls, {
-                    reasoningText: streamingProcessor.reasoningHandler.reasoning,
-                });
-                const shouldStopGeneration = (!invocationResult.invocations.length && shouldDeleteMessage) || invocationResult.stealthCalls.length;
                 if (hasToolCalls) {
-                    if (shouldStopGeneration) {
-                        if (Array.isArray(invocationResult.errors) && invocationResult.errors.length) {
-                            ToolManager.showToolCallError(invocationResult.errors);
-                        }
-                        unblockGeneration(type);
-                        streamingProcessor = null;
-                        return;
+                    if (shouldDeleteMessage) {
+                        await deleteLastMessage();
+                    } else {
+                        await streamingProcessor.finalizeIntermediaryMessage(streamingProcessor.messageId, getMessage, { unlockUI: false });
                     }
 
+                    const responseData = streamingProcessor.toolCalls;
+                    const reasoningText = streamingProcessor.reasoningHandler.reasoning;
                     streamingProcessor = null;
-                    depth = depth + 1;
-                    await ToolManager.saveFunctionToolInvocations(invocationResult.invocations);
-                    return Generate('normal', { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, depth }, dryRun);
+                    return { __sillyAgentRunner: true, kind: 'tool_calls', responseData, reasoningText };
                 }
             }
 
@@ -5577,25 +5567,10 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             parseAndSaveLogprobs(data, continue_mag);
         }
 
-        if (canPerformToolCalls) {
-            const hasToolCalls = ToolManager.hasToolCalls(data);
+        if (canPerformToolCalls && ToolManager.hasToolCalls(data)) {
             const shouldDeleteMessage = type !== 'swipe' && ['', '...'].includes(getMessage) && !reasoning;
-            hasToolCalls && shouldDeleteMessage && await deleteLastMessage();
-            const invocationResult = await ToolManager.invokeFunctionTools(data, { reasoningText: reasoning });
-            const shouldStopGeneration = (!invocationResult.invocations.length && shouldDeleteMessage) || invocationResult.stealthCalls.length;
-            if (hasToolCalls) {
-                if (shouldStopGeneration) {
-                    if (Array.isArray(invocationResult.errors) && invocationResult.errors.length) {
-                        ToolManager.showToolCallError(invocationResult.errors);
-                    }
-                    unblockGeneration(type);
-                    return;
-                }
-
-                depth = depth + 1;
-                await ToolManager.saveFunctionToolInvocations(invocationResult.invocations);
-                return Generate('normal', { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, depth }, dryRun);
-            }
+            if (shouldDeleteMessage) await deleteLastMessage();
+            return { __sillyAgentRunner: true, kind: 'tool_calls', responseData: data, reasoningText: reasoning };
         }
 
         if (type !== 'quiet') {
@@ -5638,7 +5613,33 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         throw exception;
     }
 }
-//MARK: Generate() ends
+ //MARK: Generate() ends
+
+/**
+ * Owns the logical assistant-turn tool loop. generateStep performs exactly one
+ * provider round; SillyAgentRunner decides whether to execute tools and recurse.
+ * This deliberately replaces SillyTavern's legacy recursive ToolManager loop.
+ * @param {string} type Generation type.
+ * @param {object} options Generation options.
+ * @param {boolean} dryRun Prompt preview mode.
+ * @returns {Promise<*>} Final generated result.
+ */
+export async function Generate(type, options = {}, dryRun = false) {
+    const runner = new SillyAgentRunner({
+        executeToolCalls: (data, executionOptions) => ToolManager.invokeFunctionTools(data, executionOptions),
+        saveToolInvocations: invocations => ToolManager.saveFunctionToolInvocations(invocations),
+        setToolCallsAllowed: allowed => ToolManager.setHarnessToolCallsAllowed(allowed),
+        onToolErrors: errors => ToolManager.showToolCallError(errors),
+        onStop: generationType => unblockGeneration(generationType),
+    });
+
+    return await runner.run({
+        type,
+        generationOptions: options,
+        dryRun,
+        generateStep: async (stepType, stepOptions) => await generateStep(stepType, stepOptions, dryRun),
+    });
+}
 
 /**
  * Stops the generation and any streaming if it is currently running.
