@@ -64,6 +64,71 @@ describe('agent tools API', () => {
         expect(body.tools.some(tool => tool.function.name === 'memory_propose')).toBe(true);
         expect(body.tools.some(tool => tool.function.name === 'skill_search')).toBe(true);
         expect(body.tools.some(tool => tool.function.name === 'skill_propose')).toBe(true);
+        for (const toolName of [
+            'world_get_state',
+            'world_update_state',
+            'character_get_state',
+            'character_update_state',
+            'scene_get_state',
+            'scene_advance',
+            'lore_search',
+            'dice_roll',
+        ]) {
+            expect(body.tools.some(tool => tool.function.name === toolName)).toBe(true);
+        }
+    });
+
+    test('persists world, character, and scene changes through the native tool endpoint', async () => {
+        const context = { activeCharacterId: 'harness-character.png', activeChatId: 'harness-chat' };
+        const worldWrite = await postJson(baseUrl + '/execute', {
+            ...context,
+            name: 'world_update_state',
+            arguments: { patch: { location: 'North greenhouse', weather: 'rain' }, expectedVersion: 0 },
+        });
+        const worldWritten = await worldWrite.json();
+        expect(worldWrite.status).toBe(200);
+        expect(worldWritten.ok).toBe(true);
+        expect(worldWritten.result.version).toBe(1);
+
+        const worldRead = await postJson(baseUrl + '/execute', {
+            ...context,
+            name: 'world_get_state',
+            arguments: {},
+        });
+        expect((await worldRead.json()).result.state.location).toBe('North greenhouse');
+
+        const characterWrite = await postJson(baseUrl + '/execute', {
+            ...context,
+            name: 'character_update_state',
+            arguments: { patch: { condition: 'bruised wrist' }, expectedVersion: 0 },
+        });
+        expect(characterWrite.status).toBe(200);
+        const characterRead = await postJson(baseUrl + '/execute', {
+            ...context,
+            name: 'character_get_state',
+            arguments: {},
+        });
+        expect((await characterRead.json()).result.state.condition).toBe('bruised wrist');
+
+        const sceneAdvance = await postJson(baseUrl + '/execute', {
+            ...context,
+            name: 'scene_advance',
+            arguments: {
+                summary: 'The characters leave the greenhouse for the station.',
+                location: 'Station',
+                openThreads: ['Who left the key?'],
+                expectedVersion: 0,
+            },
+        });
+        expect(sceneAdvance.status).toBe(200);
+        expect((await sceneAdvance.json()).result.state.sceneNumber).toBe(1);
+
+        const sceneRead = await postJson(baseUrl + '/execute', {
+            ...context,
+            name: 'scene_get_state',
+            arguments: {},
+        });
+        expect((await sceneRead.json()).result.state.location).toBe('Station');
     });
 
     test('defaults memory capture and dreaming to autonomous mode', async () => {
