@@ -6,7 +6,7 @@ SillyAgent is wired into SillyTavern's core and owns the model/tool loop. It doe
 
 1. The core prompt-building path assembles the conversation. For supported models, the provider adapter obtains the registered function schemas and includes them in the outbound request only while the SillyAgent turn policy allows tool calls.
 2. The one-step generation function, `generateStep`, performs exactly one provider round. If it receives a function-call response, it returns a structured handoff to `SillyAgentRunner`; it does not execute tools or recursively call `Generate`.
-3. `SillyAgentRunner` normalizes provider-specific tool-call shapes, executes calls sequentially, collects success/error results, persists tool results into the conversation, and starts the next model step. It enforces a configurable per-turn budget capped at eight tool rounds and 24 calls, then requests a final tool-free generation. The allow/deny decision is passed as a request-scoped policy through prompt budgeting, response handling, and provider payload construction, so overlapping generations cannot alter each other’s tool availability.
+3. `SillyAgentRunner` normalizes provider-specific tool-call shapes, executes calls sequentially, collects success/error results, persists tool results into the conversation, and starts the next model step. It owns a per-turn budget of eight tool rounds and 24 calls, then requests a final tool-free generation. The legacy SillyTavern recursive-tool limit does not control this budget. The allow/deny decision is passed as a request-scoped policy through prompt budgeting, response handling, and provider payload construction, so overlapping generations cannot alter each other’s tool availability.
 4. SillyAgent server tools are dispatched directly to `POST /api/agent/tools/execute` with the model-supplied name and arguments plus current chat/character/lore context. Non-SillyAgent user tools retain a compatibility dispatch adapter, but they are also executed under the SillyAgent-owned loop.
 5. Tool results become part of the conversation before the next step, so the model can observe the result, revise its plan, and decide whether another call is useful. Budget exhaustion leads to a final response instead of unbounded recursion.
 
@@ -19,7 +19,7 @@ This separates the agent controller from provider transport. We intentionally re
 | `memory_search` / `memory_propose` | Read relevant memory and persist durable facts/preferences/events | Read / write |
 | `skill_search` / `skill_read` | Progressive disclosure of procedural skills | Read |
 | `skill_propose` / `skill_rollback` | Versioned skill improvement and rollback | Write |
-| `world_get_state` / `world_update_state` | Read or patch shared setting state for the active chat | Read / write |
+| `world_get_state` / `world_update_state` | Read or patch shared setting state for the active World Info book set, falling back to the active chat when no books are selected | Read / write |
 | `character_get_state` / `character_update_state` | Read or patch persistent dynamic state for the active character | Read / write |
 | `scene_get_state` / `scene_advance` | Read current scene metadata and commit meaningful scene transitions | Read / write |
 | `lore_search` | Search only World Info books active for the current SillyTavern context | Read |
@@ -31,7 +31,7 @@ The model-facing descriptions tell it when tools are useful, when to read before
 
 `src/agent/roleplay-state-store.js` owns `sillyagent/roleplay-state.sqlite` under each SillyTavern data root. State is stored as versioned JSON partitions with a separate append-only change history. The schema distinguishes `world`, `character`, and `scene` state types.
 
-World and scene state are scoped to the active chat. When a character is selected, the backend hashes the character/chat pair into the chat partition so two characters using similarly named chat files cannot read each other's state. Character state uses the active character's ID and is kept separate from the character card's static description and from memory reflection. Group chats do not silently inherit the last individually selected character's state.
+World state is scoped to a stable hash of the active World Info book-name set, so chats using the same world share world facts; with no active books it falls back to the active chat scope. Scene state is chat-scoped. Chat-scoped state and captured memories hash the character/chat pair when a single character is active, so two characters using similarly named chat files cannot read each other's state. Character state uses the active character's ID and is kept separate from the character card's static description and from memory reflection. Group chats do not silently inherit the last individually selected character's state.
 
 State changes use JSON Merge Patch semantics: nested objects merge, arrays replace, and `null` removes a key. Each successful update increments a version and records the patch, source tool, and timestamp. Writers can pass the version returned by a read as `expectedVersion`; stale writes return a conflict instead of silently overwriting newer state. State keys, nesting depth, array lengths, string length, patch size, and total partition size are bounded. Credential-like secret strings are rejected.
 
