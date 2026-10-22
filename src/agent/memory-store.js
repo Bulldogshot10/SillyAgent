@@ -899,6 +899,59 @@ export class MemoryStore {
         }));
     }
     /**
+     * Permanently remove all SillyAgent data owned by a deleted chat partition.
+     * Character-scoped memories derived from this chat remain independent records.
+     * @param {string} scopeId Hashed character/chat partition ID, or group chat ID.
+     * @returns {{clearedTurns: number, deletedMemories: number, deletedProposals: number, cancelledJobs: number}}
+     */
+    deleteChatPartition(scopeId) {
+        const target = normalizeScope('chat', scopeId);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const clearedTurns = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memory_events WHERE scope = ? AND scope_id = ? ' +
+                'AND event_type IN (?, ?)',
+            ).get(target.scope, target.scopeId, 'chat.user_turn', 'chat.assistant_turn').count;
+            const deletedMemories = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memories WHERE scope = ? AND scope_id = ?',
+            ).get(target.scope, target.scopeId).count;
+            const deletedProposals = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memory_proposals WHERE scope = ? AND scope_id = ?',
+            ).get(target.scope, target.scopeId).count;
+            const cancelledJobs = this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memory_reflection_jobs WHERE scope_id = ?',
+            ).get(target.scopeId).count;
+
+            this.#db.prepare(
+                'DELETE FROM memory_fts WHERE memory_id IN (SELECT id FROM memories WHERE scope = ? AND scope_id = ?)',
+            ).run(target.scope, target.scopeId);
+            this.#db.prepare(
+                'DELETE FROM memory_fts_trigram WHERE memory_id IN (SELECT id FROM memories WHERE scope = ? AND scope_id = ?)',
+            ).run(target.scope, target.scopeId);
+            this.#db.prepare(
+                'DELETE FROM memory_capture_keys WHERE event_id IN ' +
+                '(SELECT id FROM memory_events WHERE scope = ? AND scope_id = ?)',
+            ).run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memory_reflection_jobs WHERE scope_id = ?').run(target.scopeId);
+            this.#db.prepare('DELETE FROM memory_proposals WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memories WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memory_forget_tombstones WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memory_forget_evidence WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memory_events WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.exec('COMMIT;');
+            return { clearedTurns, deletedMemories, deletedProposals, cancelledJobs };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    /**
      * Clear raw captured turns from one chat while retaining approved memories and proposals.
      * @param {string} scopeId Chat ID.
      * @returns {number} Number of raw turns removed.
@@ -1287,6 +1340,16 @@ export class MemoryStore {
             this.#db.exec('ROLLBACK;');
             throw error;
         }
+    }
+
+    ownsReflectionJob(jobId, claimToken, now = Date.now()) {
+        if (typeof jobId !== 'string' || !jobId || typeof claimToken !== 'string' || !claimToken) {
+            throw new TypeError('A job ID and claim token are required.');
+        }
+        return Boolean(this.#db.prepare(
+            'SELECT 1 FROM memory_reflection_jobs WHERE id = ? AND status = \'running\' ' +
+            'AND claim_token = ? AND lease_until > ? LIMIT 1',
+        ).get(jobId, claimToken, now));
     }
 
     completeReflectionJob(jobId, claimToken, now = Date.now()) {
