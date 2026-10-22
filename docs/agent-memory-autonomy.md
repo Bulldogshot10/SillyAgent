@@ -30,7 +30,7 @@ Provider errors leave the durable job available for bounded retries, up to three
 
 ## Tool harness
 
-The built-in server tool registry is exposed through `/api/agent/tools` and registered in SillyTavern's native `ToolManager` when preparing supported Chat Completion requests. Memory and skill tools execute through the same schema-validated registry; provider-native function calling remains dependent on the selected SillyTavern provider/model's supported capabilities. Automatic capture, retrieval, and reflection do not depend on the model remembering to call a memory tool.
+The built-in server tool registry is exposed through `/api/agent/tools` and registered in SillyTavern's native `ToolManager` when preparing supported Chat Completion requests. Memory, versioned skills, world state, character state, scene checkpoints, lore search, and dice tools execute through the same schema-validated registry and SillyTavern's normal provider-aware tool-call loop. Provider-native function calling remains dependent on the selected provider/model's supported capabilities. Automatic capture, retrieval, and reflection do not depend on the model remembering to call a memory tool. See [native agent harness architecture](agent-tool-harness.md) for tool lifecycle, state scopes, permissions, and concurrency behavior.
 
 ## Runtime requirement
 
