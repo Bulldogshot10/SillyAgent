@@ -5707,6 +5707,18 @@ async function executeHarnessToolCall(toolCall, { reasoningText = null } = {}) {
 }
 
 export async function Generate(type, options = {}, dryRun = false) {
+    // One abort controller owns the entire logical agent turn, including time
+    // spent dispatching tools between model requests.
+    const turnAbortController = new AbortController();
+    const externalSignal = options.signal;
+    const forwardExternalAbort = () => turnAbortController.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) {
+        forwardExternalAbort();
+    } else if (typeof externalSignal?.addEventListener === 'function') {
+        externalSignal.addEventListener('abort', forwardExternalAbort, { once: true });
+    }
+    abortController = turnAbortController;
+
     // SillyAgent owns its turn budget. Do not inherit SillyTavern's legacy
     // recursive-tool setting, because the runner no longer uses that loop.
     const maxToolRounds = SillyAgentRunner.MAX_TOOL_ROUNDS;
@@ -5717,20 +5729,24 @@ export async function Generate(type, options = {}, dryRun = false) {
         saveToolInvocations: invocations => ToolManager.saveFunctionToolInvocations(invocations),
         onToolErrors: errors => ToolManager.showToolCallError(errors),
         onStop: generationType => unblockGeneration(generationType),
-        shouldStop: () => !!abortController?.signal.aborted,
+        shouldStop: () => turnAbortController.signal.aborted,
         maxToolRounds,
     });
 
-    return await runner.run({
-        type,
-        generationOptions: options,
-        dryRun,
-        generateStep: async (stepType, stepOptions, policy) => await generateStep(
-            stepType,
-            { ...stepOptions, allowToolCalls: policy.allowToolCalls },
+    try {
+        return await runner.run({
+            type,
+            generationOptions: { ...options, signal: turnAbortController.signal },
             dryRun,
-        ),
-    });
+            generateStep: async (stepType, stepOptions, policy) => await generateStep(
+                stepType,
+                { ...stepOptions, signal: turnAbortController.signal, allowToolCalls: policy.allowToolCalls },
+                dryRun,
+            ),
+        });
+    } finally {
+        externalSignal?.removeEventListener?.('abort', forwardExternalAbort);
+    }
 }
 
 /**
