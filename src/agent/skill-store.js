@@ -491,6 +491,25 @@ export class SkillStore {
         }));
     }
 
+    /**
+     * Remove every procedural skill, revision, setting, and audit event for this character.
+     * @returns {{skills: number, revisions: number, events: number}}
+     */
+    clearAll() {
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const skills = this.#db.prepare('SELECT COUNT(*) AS count FROM skills').get().count;
+            const revisions = this.#db.prepare('SELECT COUNT(*) AS count FROM skill_revisions').get().count;
+            const events = this.#db.prepare('SELECT COUNT(*) AS count FROM skill_events').get().count;
+            this.#db.exec('DELETE FROM skill_events; DELETE FROM skill_revisions; DELETE FROM skills; DELETE FROM skill_settings;');
+            this.#db.exec('COMMIT;');
+            return { skills, revisions, events };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
     close() {
         this.#db.close();
     }
