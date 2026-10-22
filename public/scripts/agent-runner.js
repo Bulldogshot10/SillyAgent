@@ -123,14 +123,18 @@ export class SillyAgentRunner {
                 if (errors.length) this.#onToolErrors(errors);
                 toolCallsExecuted += callsToRun.length;
 
-                // Stealth tools deliberately terminate their turn. An empty
+                if (invocations.length > 0) {
+                    await this.#saveToolInvocations(invocations);
+                }
+
+                // Stealth tools deliberately terminate their turn. Persist any
+                // ordinary results from the same batch before stopping. An empty
                 // dispatch cannot be allowed to create an infinite model loop.
                 if (stealthCalls.length || invocations.length === 0) {
                     this.#onStop(stepType);
                     return undefined;
                 }
 
-                await this.#saveToolInvocations(invocations);
                 rounds += 1;
             }
         } finally {
