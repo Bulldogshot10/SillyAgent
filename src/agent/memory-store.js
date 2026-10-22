@@ -380,10 +380,10 @@ export class MemoryStore {
             throw new TypeError('Memory importance must be an integer from 1 through 5.');
         }
         if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Memory timestamp must be a non-negative integer.');
-        if (!Array.isArray(requireCurrentEvidenceIds) || requireCurrentEvidenceIds.length > 12
+        if (!Array.isArray(requireCurrentEvidenceIds) || requireCurrentEvidenceIds.length > 200
             || requireCurrentEvidenceIds.some(id => typeof id !== 'string' || !id || id.length > 256)
             || new Set(requireCurrentEvidenceIds).size !== requireCurrentEvidenceIds.length) {
-            throw new TypeError('Current evidence must contain up to 12 unique event IDs.');
+            throw new TypeError('Current evidence must contain up to 200 unique event IDs.');
         }
         const metadataJson = serializeMetadata(metadata);
         const approvalRequired = requireApproval === undefined ? this.getSettings().requireApproval : requireApproval;
@@ -406,7 +406,7 @@ export class MemoryStore {
                     return { memory: null, duplicate: false, forgotten: false, staleEvidence: true, requiresReview: approvalRequired };
                 }
             }
-            if (metadata?.origin === 'background_reflection') {
+            if (['background_reflection', 'dreaming'].includes(metadata?.origin)) {
                 const forgotten = this.#db.prepare(
                     'SELECT 1 FROM memory_forget_tombstones WHERE scope = ? AND scope_id = ? AND content_hash = ? LIMIT 1',
                 ).get(target.scope, target.scopeId, getMemoryContentHash(text));
