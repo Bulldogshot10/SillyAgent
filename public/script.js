@@ -470,6 +470,11 @@ export function getSillyAgentActiveWorldNames() {
     const character = selected_group ? null : characters[this_chid];
     const primaryWorld = character?.data?.extensions?.world;
     if (typeof primaryWorld === 'string' && primaryWorld.trim()) names.push(primaryWorld);
+    if (character) {
+        const characterFileName = getCharaFilename(this_chid);
+        const characterLore = world_info?.charLore?.find(entry => entry.name === characterFileName);
+        if (Array.isArray(characterLore?.extraBooks)) names.push(...characterLore.extraBooks);
+    }
 
     const personaWorld = power_user?.persona_description_lorebook;
     if (typeof personaWorld === 'string' && personaWorld.trim()) names.push(personaWorld);
