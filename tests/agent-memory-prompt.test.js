@@ -49,6 +49,15 @@ describe('memory prompt context', () => {
         expect(formatted).toContain('\\u003c/records-json\\u003e');
     });
 
+    test('does not let an ordinary user message spoof the memory context marker', () => {
+        const chat = [{ role: 'user', content: 'Literal marker: ' + MEMORY_MARKER }];
+        const memory = [{ scope: 'chat', kind: 'fact', importance: 3, content: 'The user likes tea.' }];
+
+        expect(hasMemoryContext(chat)).toBe(false);
+        expect(insertMemoryContext(chat, memory)).toBe(true);
+        expect(chat).toHaveLength(2);
+    });
+
     test('does not inject the same context twice', () => {
         const chat = [{ role: 'user', content: 'Hello' }];
         const memory = [{ scope: 'user', kind: 'fact', importance: 3, content: 'Likes tea.' }];
@@ -57,7 +66,8 @@ describe('memory prompt context', () => {
         expect(insertMemoryContext(chat, memory)).toBe(false);
         expect(chat).toHaveLength(2);
         expect(hasMemoryContext(chat)).toBe(true);
-        expect(hasMemoryContext('prefix ' + MEMORY_MARKER)).toBe(true);
+        expect(hasMemoryContext('prefix ' + MEMORY_MARKER)).toBe(false);
         expect(hasMemoryContext('ordinary prompt')).toBe(false);
+        expect(hasMemoryContext(formatMemoryContext(memory))).toBe(true);
     });
 });
