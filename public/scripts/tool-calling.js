@@ -880,9 +880,18 @@ export class ToolManager {
      * @param {object} data Response data
      * @returns {boolean} Whether the response data contains tool calls
      */
-    static hasToolCalls(data) {
+    static extractToolCalls(data) {
         const toolCalls = ToolManager.#getToolCallsFromData(data);
-        return Array.isArray(toolCalls) && toolCalls.length > 0;
+        return Array.isArray(toolCalls) ? toolCalls : [];
+    }
+
+    /**
+     * Checks if the response data contains normalized function calls.
+     * @param {any} data Response data.
+     * @returns {boolean} Whether the response data contains tool calls.
+     */
+    static hasToolCalls(data) {
+        return ToolManager.extractToolCalls(data).length > 0;
     }
 
     /**
