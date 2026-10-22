@@ -29,10 +29,16 @@ export function formatMemoryContext(memories) {
         + '\n</records-json>\n[/SILLYAGENT_MEMORY_CONTEXT_V1]';
 }
 
+function isFormattedMemoryContext(content) {
+    return typeof content === 'string'
+        && content.includes(MEMORY_MARKER + '\\n' + MEMORY_CONTEXT_INSTRUCTIONS + '\\n<records-json>\\n')
+        && content.includes('\\n</records-json>\\n[/SILLYAGENT_MEMORY_CONTEXT_V1]');
+}
+
 export function hasMemoryContext(value) {
-    if (typeof value === 'string') return value.includes(MEMORY_MARKER);
+    if (typeof value === 'string') return isFormattedMemoryContext(value);
     return Array.isArray(value) && value.some(message =>
-        typeof message?.content === 'string' && message.content.includes(MEMORY_MARKER));
+        message?.role === 'user' && isFormattedMemoryContext(message.content));
 }
 
 export function insertMemoryContext(chat, memories) {
