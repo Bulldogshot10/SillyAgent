@@ -899,6 +899,105 @@ export class MemoryStore {
         }));
     }
     /**
+     * Purge all character-owned memory and any orphaned chat partitions whose
+     * captured turns or durable jobs still identify this character.
+     * @param {string} characterId Character avatar identifier.
+     * @returns {{deletedMemories: number, deletedProposals: number, deletedEvents: number, cancelledJobs: number, purgedChatPartitions: number}}
+     */
+    deleteCharacterPartition(characterId) {
+        const target = normalizeScope('character', characterId);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const chatScopes = this.#db.prepare(
+                'SELECT DISTINCT scope_id FROM memory_events WHERE scope = \'chat\' ' +
+                'AND event_type IN (?, ?) AND json_extract(metadata_json, \'$.characterId\') = ? ' +
+                'UNION SELECT DISTINCT scope_id FROM memory_reflection_jobs WHERE character_id = ?',
+            ).all('chat.user_turn', 'chat.assistant_turn', target.scopeId, target.scopeId)
+                .map(row => row.scope_id);
+
+            let deletedEvents = 0;
+            let deletedMemories = 0;
+            let deletedProposals = 0;
+            let cancelledJobs = 0;
+
+            for (const scopeId of chatScopes) {
+                deletedMemories += this.#db.prepare(
+                    'SELECT COUNT(*) AS count FROM memories WHERE scope = \'chat\' AND scope_id = ?',
+                ).get(scopeId).count;
+                deletedProposals += this.#db.prepare(
+                    'SELECT COUNT(*) AS count FROM memory_proposals WHERE scope = \'chat\' AND scope_id = ?',
+                ).get(scopeId).count;
+                deletedEvents += this.#db.prepare(
+                    'SELECT COUNT(*) AS count FROM memory_events WHERE scope = \'chat\' AND scope_id = ?',
+                ).get(scopeId).count;
+                cancelledJobs += this.#db.prepare(
+                    'SELECT COUNT(*) AS count FROM memory_reflection_jobs WHERE scope_id = ?',
+                ).get(scopeId).count;
+
+                this.#db.prepare(
+                    'DELETE FROM memory_fts WHERE memory_id IN (SELECT id FROM memories WHERE scope = \'chat\' AND scope_id = ?)',
+                ).run(scopeId);
+                this.#db.prepare(
+                    'DELETE FROM memory_fts_trigram WHERE memory_id IN (SELECT id FROM memories WHERE scope = \'chat\' AND scope_id = ?)',
+                ).run(scopeId);
+                this.#db.prepare(
+                    'DELETE FROM memory_capture_keys WHERE event_id IN (SELECT id FROM memory_events WHERE scope = \'chat\' AND scope_id = ?)',
+                ).run(scopeId);
+                this.#db.prepare('DELETE FROM memory_reflection_jobs WHERE scope_id = ?').run(scopeId);
+                this.#db.prepare('DELETE FROM memory_proposals WHERE scope = \'chat\' AND scope_id = ?').run(scopeId);
+                this.#db.prepare('DELETE FROM memories WHERE scope = \'chat\' AND scope_id = ?').run(scopeId);
+                this.#db.prepare('DELETE FROM memory_forget_tombstones WHERE scope = \'chat\' AND scope_id = ?').run(scopeId);
+                this.#db.prepare('DELETE FROM memory_forget_evidence WHERE scope = \'chat\' AND scope_id = ?').run(scopeId);
+                this.#db.prepare('DELETE FROM memory_events WHERE scope = \'chat\' AND scope_id = ?').run(scopeId);
+            }
+
+            deletedMemories += this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memories WHERE scope = ? AND scope_id = ?',
+            ).get(target.scope, target.scopeId).count;
+            deletedProposals += this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memory_proposals WHERE scope = ? AND scope_id = ?',
+            ).get(target.scope, target.scopeId).count;
+            deletedEvents += this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memory_events WHERE scope = ? AND scope_id = ?',
+            ).get(target.scope, target.scopeId).count;
+            cancelledJobs += this.#db.prepare(
+                'SELECT COUNT(*) AS count FROM memory_reflection_jobs WHERE character_id = ?',
+            ).get(target.scopeId).count;
+
+            this.#db.prepare(
+                'DELETE FROM memory_fts WHERE memory_id IN (SELECT id FROM memories WHERE scope = ? AND scope_id = ?)',
+            ).run(target.scope, target.scopeId);
+            this.#db.prepare(
+                'DELETE FROM memory_fts_trigram WHERE memory_id IN (SELECT id FROM memories WHERE scope = ? AND scope_id = ?)',
+            ).run(target.scope, target.scopeId);
+            this.#db.prepare(
+                'DELETE FROM memory_reflection_jobs WHERE character_id = ?',
+            ).run(target.scopeId);
+            this.#db.prepare('DELETE FROM memory_proposals WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memories WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memory_forget_tombstones WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memory_forget_evidence WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.prepare('DELETE FROM memory_events WHERE scope = ? AND scope_id = ?')
+                .run(target.scope, target.scopeId);
+            this.#db.exec('COMMIT;');
+            return {
+                deletedMemories,
+                deletedProposals,
+                deletedEvents,
+                cancelledJobs,
+                purgedChatPartitions: chatScopes.length,
+            };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    /**
      * Permanently remove all SillyAgent data owned by a deleted chat partition.
      * Character-scoped memories derived from this chat remain independent records.
      * @param {string} scopeId Hashed character/chat partition ID, or group chat ID.
