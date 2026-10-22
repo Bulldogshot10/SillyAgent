@@ -566,6 +566,24 @@ router.get('/memory/reflection-jobs/status', async (request, response) => {
     }
 });
 
+router.post('/memory/activate-chat', async (request, response) => {
+    const rawChatId = getSafeContextId(request.body?.activeChatId);
+    const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
+    const scopedChatId = getScopedChatId(rawChatId, activeCharacterId);
+    if (!scopedChatId) {
+        return response.status(400).json({
+            ok: false,
+            error: { code: 'missing_chat_id', message: 'Reactivating memory capture requires an active chat.' },
+        });
+    }
+    try {
+        const store = await getMemoryStore(request);
+        return response.json({ ok: true, ...store.activateChatPartition(scopedChatId) });
+    } catch (error) {
+        return sendMemoryError(response, error);
+    }
+});
+
 router.post('/capture-turn', async (request, response) => {
     const body = request.body ?? {};
     const activeChatId = getSafeContextId(body.activeChatId);
@@ -595,6 +613,12 @@ router.post('/capture-turn', async (request, response) => {
             captureKey,
             metadata: { characterId: activeCharacterId, messageKey: body.messageKey },
         });
+        if (captured.deleted) {
+            return response.status(410).json({
+                ok: false,
+                error: { code: 'chat_partition_deleted', message: 'This chat was deleted. SillyAgent rejected a late capture request.' },
+            });
+        }
         const capturedCount = store.countCapturedTurns(scopedChatId);
         let queuedReflection = null;
         // Review naturally after each completed assistant reply. This is driven by
