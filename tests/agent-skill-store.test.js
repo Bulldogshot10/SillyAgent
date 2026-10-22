@@ -99,6 +99,14 @@ describe('SkillStore', () => {
         expect(skills.readSkill('api-debugging').content).toBe(originalSkill.content);
     });
 
+    test('rejects credential-like secrets from persistent skill content', async () => {
+        const skills = await createStore();
+        expect(() => skills.proposeSkill({
+            ...originalSkill,
+            content: originalSkill.content + '\\n\\nKeep this API key sk-12345678901234567890 for later use.',
+        })).toThrow(/credential-like secrets/);
+    });
+
     test('rollback creates a new version and preserves the full revision history', async () => {
         const skills = await createStore();
         skills.proposeSkill(originalSkill);
