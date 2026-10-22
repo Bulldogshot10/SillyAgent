@@ -89,7 +89,7 @@ export class SillyAgentRunner {
                 // Stealth calls intentionally terminate their turn, matching their
                 // contract. An empty dispatch cannot be allowed to spin forever.
                 if (execution.stealthCalls.length || execution.invocations.length === 0) {
-                    this.#onStop(type);
+                    this.#onStop(stepType);
                     return undefined;
                 }
 
