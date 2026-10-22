@@ -1,14 +1,16 @@
 import { createHash } from 'node:crypto';
 import express from 'express';
 
-import { getAgentMemoryStore, getAgentSkillStore } from '../agent/runtime.js';
+import { getAgentMemoryStore, getAgentRoleplayStateStore, getAgentSkillStore } from '../agent/runtime.js';
 import { getReflectionProviderState, saveReflectionProviderConfig } from '../agent/reflection-provider.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
 import { registerSkillTools } from '../agent/skill-tools.js';
+import { registerRoleplayTools } from '../agent/roleplay-tools.js';
 import { toolRegistry } from '../agent/tool-registry.js';
 
 registerBuiltinTools();
 registerSkillTools();
+registerRoleplayTools();
 
 export const router = express.Router();
 
@@ -30,6 +32,14 @@ function getScopedChatId(chatId, characterId) {
     return 'character-chat-' + createHash('sha256')
         .update(safeCharacterId + '\0' + safeChatId)
         .digest('hex');
+}
+
+function getSafeWorldNames(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value.filter(name => typeof name === 'string')
+        .map(name => name.trim())
+        .filter(name => name.length > 0 && name.length <= 120 && name !== '.' && name !== '..'
+            && !name.includes('/') && !name.includes('\\')))].slice(0, 20);
 }
 
 function getScopedMemorySummary(store, activeCharacterId, scopedChatId) {
@@ -123,7 +133,7 @@ async function sendMemoryError(response, error) {
 
 router.get('/', (_request, response) => {
     return response.json({
-        tools: toolRegistry.getFunctionDefinitions({ toolsets: ['roleplay', 'memory', 'skills'] }),
+        tools: toolRegistry.getFunctionDefinitions({ toolsets: ['roleplay', 'memory', 'skills', 'world', 'character', 'lore', 'scene'] }),
     });
 });
 
@@ -639,6 +649,20 @@ router.post('/execute', async (request, response) => {
         }
     }
 
+    let roleplayStateStore = null;
+    const needsRoleplayState = body.name.startsWith('world_') || body.name.startsWith('character_') || body.name.startsWith('scene_');
+    if (needsRoleplayState) {
+        try {
+            roleplayStateStore = await getAgentRoleplayStateStore(request.user?.directories ?? { root: request.user?.directories?.root ?? globalThis.DATA_ROOT });
+        } catch (error) {
+            console.error('[SillyAgent roleplay state]', error);
+            return response.status(503).json({
+                ok: false,
+                error: { code: 'roleplay_state_unavailable', message: error?.message || 'Persistent roleplay state is unavailable.' },
+            });
+        }
+    }
+
     let skillStore = null;
     if (body.name.startsWith('skill_')) {
         try {
@@ -650,18 +674,23 @@ router.post('/execute', async (request, response) => {
 
     const memoryWritesEnabled = getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED', true);
     const skillWritesEnabled = getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_SKILLWRITESENABLED', true);
+    const roleplayStateWritesEnabled = getEnvironmentBoolean('SILLYTAVERN_AGENTTOOLS_ROLEPLAYSTATEWRITESENABLED', true);
     const allowedWriteToolsets = [];
     if (memoryWritesEnabled) allowedWriteToolsets.push('memory');
     if (skillWritesEnabled) allowedWriteToolsets.push('skills');
+    if (roleplayStateWritesEnabled) allowedWriteToolsets.push('world', 'character', 'scene');
 
     const result = await toolRegistry.executeTool(body.name, body.arguments, {
-        allowedToolsets: ['roleplay', 'memory', 'skills'],
+        allowedToolsets: ['roleplay', 'memory', 'skills', 'world', 'character', 'lore', 'scene'],
         allowWrites: allowedWriteToolsets.length > 0,
         allowedWriteToolsets,
         context: {
             source: 'agent-tools-api',
             memoryStore,
+            roleplayStateStore,
             skillStore,
+            worldsDirectory: request.user?.directories?.worlds ?? null,
+            activeWorldNames: getSafeWorldNames(body.activeWorldNames),
             requireSkillApproval: skillStore ? getEffectiveSkillSettings(skillStore).requireApproval : false,
             requireMemoryApproval: memoryStore ? getEffectiveMemorySettings(memoryStore).requireApproval : false,
             activeChatId: getScopedChatId(
@@ -683,6 +712,7 @@ router.post('/execute', async (request, response) => {
         result_too_large: 500,
         invalid_result: 500,
         tool_failed: 500,
+        state_conflict: 409,
     }[result.error.code] ?? 500;
     return response.status(status).json(result);
 });
