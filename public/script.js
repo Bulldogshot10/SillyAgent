@@ -37,6 +37,7 @@ import {
 
 import {
     world_info,
+    selected_world_info,
     getWorldInfoPrompt,
     getWorldInfoSettings,
     setWorldInfoSettings,
@@ -453,6 +454,31 @@ let dialogueResolve = null;
 let dialogueCloseStop = false;
 /** @type {ChatMetadata} */
 export let chat_metadata = {};
+
+/**
+ * Return the World Info books relevant to the current SillyTavern context.
+ * Passed to server-side lore tools as names only; book contents stay server-side.
+ * @returns {string[]} Active lorebook names.
+ */
+export function getSillyAgentActiveWorldNames() {
+    const names = [];
+    if (Array.isArray(selected_world_info)) names.push(...selected_world_info);
+    if (Array.isArray(chat_metadata?.world_info)) names.push(...chat_metadata.world_info);
+    else if (typeof chat_metadata?.world_info === 'string') names.push(chat_metadata.world_info);
+
+    const character = characters[this_chid];
+    const primaryWorld = character?.data?.extensions?.world;
+    if (typeof primaryWorld === 'string' && primaryWorld.trim()) names.push(primaryWorld);
+
+    const personaWorld = power_user?.persona_description_lorebook;
+    if (typeof personaWorld === 'string' && personaWorld.trim()) names.push(personaWorld);
+
+    return [...new Set(names
+        .filter(name => typeof name === 'string')
+        .map(name => name.trim())
+        .filter(name => name.length > 0 && name.length <= 120 && name !== '.' && name !== '..'
+            && !name.includes('/') && !name.includes('\\')))].slice(0, 20);
+}
 /** @type {StreamingProcessor} */
 export let streamingProcessor = null;
 let crop_data = undefined;
