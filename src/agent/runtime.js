@@ -30,7 +30,7 @@ export function getAgentScopedChatId(chatId, characterId = null) {
         : null;
     if (!safeCharacterId) return safeChatId;
     return 'character-chat-' + createHash('sha256')
-        .update(safeCharacterId + '\\0' + safeChatId)
+        .update(safeCharacterId + '\0' + safeChatId)
         .digest('hex');
 }
 
