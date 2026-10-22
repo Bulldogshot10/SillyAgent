@@ -825,6 +825,68 @@ describe('MemoryStore', () => {
             .toEqual(['This character preference is independent of that chat.']);
     });
 
+    test('purges character memory and chat partitions, including orphaned captured turns', async () => {
+        const store = await createMemoryStore();
+        const captured = store.captureTurn({
+            scopeId: 'orphaned-julia-chat',
+            role: 'user',
+            content: 'A private turn owned by Julia.',
+            captureKey: 'orphaned-julia-turn',
+            metadata: { characterId: 'julia.png' },
+        });
+        store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'orphaned-julia-chat',
+            kind: 'preference',
+            content: 'A chat-only preference that must disappear.',
+            metadata: { origin: 'manual' },
+            requireApproval: false,
+        });
+        store.proposeMemory({
+            scope: 'character',
+            scopeId: 'julia.png',
+            kind: 'preference',
+            content: 'A Julia-specific preference that must disappear.',
+            metadata: { origin: 'manual' },
+            requireApproval: false,
+        });
+        store.captureTurn({
+            scopeId: 'bella-chat',
+            role: 'user',
+            content: 'A separate character turn that must remain.',
+            captureKey: 'bella-turn',
+            metadata: { characterId: 'bella.png' },
+        });
+        store.proposeMemory({
+            scope: 'character',
+            scopeId: 'bella.png',
+            kind: 'preference',
+            content: 'Bella-specific preference stays.',
+            metadata: { origin: 'manual' },
+            requireApproval: false,
+        });
+        store.enqueueReflectionJob({
+            scopeId: 'orphaned-julia-chat',
+            chatId: 'missing-chat-file',
+            characterId: 'julia.png',
+            mode: 'extract',
+            triggerEventId: captured.event.id,
+            triggerCount: 1,
+        });
+
+        const result = store.deleteCharacterPartition('julia.png');
+
+        expect(result.purgedChatPartitions).toBe(1);
+        expect(result.deletedMemories).toBe(2);
+        expect(store.listMemories({ scope: 'character', scopeId: 'julia.png' })).toHaveLength(0);
+        expect(store.listMemories({ scope: 'chat', scopeId: 'orphaned-julia-chat' })).toHaveLength(0);
+        expect(store.countCapturedTurns('orphaned-julia-chat')).toBe(0);
+        expect(store.listReflectionJobs()).toHaveLength(0);
+        expect(store.listMemories({ scope: 'character', scopeId: 'bella.png' }).map(memory => memory.content))
+            .toEqual(['Bella-specific preference stays.']);
+        expect(store.countCapturedTurns('bella-chat')).toBe(1);
+    });
+
     test('persists and claims autonomous reflection jobs only within the active character', async () => {
         const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-reflection-jobs-'));
         const databasePath = path.join(folder, 'memory.sqlite');
