@@ -103,7 +103,7 @@ describe('SkillStore', () => {
         const skills = await createStore();
         expect(() => skills.proposeSkill({
             ...originalSkill,
-            content: originalSkill.content + '\\n\\nKeep this API key sk-12345678901234567890 for later use.',
+            content: originalSkill.content + '\n\nKeep this API key sk-12345678901234567890 for later use.',
         })).toThrow(/credential-like secrets/);
     });
 
