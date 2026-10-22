@@ -116,6 +116,19 @@ function extractMessageText(message) {
     return message.mes.trim().slice(0, 12000);
 }
 
+async function activateCapturePartition(runtime) {
+    const ids = contextIds(runtime);
+    if (!ids.activeChatId) return;
+    try {
+        await requestApi(runtime, '/memory/activate-chat', {
+            method: 'POST',
+            body: JSON.stringify(ids),
+        });
+    } catch (error) {
+        console.debug('[SillyAgent native memory] Chat partition activation skipped:', error);
+    }
+}
+
 async function captureTurn(runtime, messageIndex, role, messageType = '') {
     if (['swipe', 'continue', 'append', 'appendFinal', 'impersonate'].includes(messageType)) return;
     const chat = runtime.getChat();
@@ -348,8 +361,13 @@ export function initSillyAgentMemory(runtime) {
     });
     runtime.eventSource.on(runtime.eventTypes.CHAT_COMPLETION_PROMPT_READY, eventData => onChatPromptReady(runtime, eventData));
     runtime.eventSource.on(runtime.eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, eventData => onTextPromptReady(runtime, eventData));
-    runtime.eventSource.on(runtime.eventTypes.CHAT_CHANGED, () => void refreshPanel(runtime));
-    runtime.eventSource.on(runtime.eventTypes.CHAT_LOADED, () => void refreshPanel(runtime));
+    const onChatLifecycle = () => {
+        void activateCapturePartition(runtime);
+        void refreshPanel(runtime);
+    };
+    runtime.eventSource.on(runtime.eventTypes.CHAT_CHANGED, onChatLifecycle);
+    runtime.eventSource.on(runtime.eventTypes.CHAT_LOADED, onChatLifecycle);
+    if (runtime.eventTypes.CHAT_CREATED) runtime.eventSource.on(runtime.eventTypes.CHAT_CREATED, onChatLifecycle);
 
     document.getElementById('sa_memory_refresh')?.addEventListener('click', () => void refreshPanel(runtime));
     document.getElementById('sa_memory_clear_captured')?.addEventListener('click', () => void clearCapturedHistory(runtime));
@@ -358,7 +376,10 @@ export function initSillyAgentMemory(runtime) {
 
     // This request initializes the per-user SQLite store and resumes queued
     // work after a server restart; the backend worker itself is server-owned.
-    void requestApi(runtime, '/memory/reflection-jobs/status')
+    void Promise.all([
+        activateCapturePartition(runtime),
+        requestApi(runtime, '/memory/reflection-jobs/status'),
+    ])
         .then(async () => {
             await Promise.all([refreshPanel(runtime), loadReflectionProvider(runtime)]);
         })
