@@ -5706,10 +5706,9 @@ async function executeHarnessToolCall(toolCall, { reasoningText = null } = {}) {
 }
 
 export async function Generate(type, options = {}, dryRun = false) {
-    const configuredRounds = Number(oai_settings.tool_call_recurse_limit);
-    const maxToolRounds = Number.isFinite(configuredRounds)
-        ? Math.max(1, Math.min(SillyAgentRunner.MAX_TOOL_ROUNDS, Math.floor(configuredRounds)))
-        : SillyAgentRunner.MAX_TOOL_ROUNDS;
+    // SillyAgent owns its turn budget. Do not inherit SillyTavern's legacy
+    // recursive-tool setting, because the runner no longer uses that loop.
+    const maxToolRounds = SillyAgentRunner.MAX_TOOL_ROUNDS;
 
     const runner = new SillyAgentRunner({
         extractToolCalls: data => ToolManager.extractToolCalls(data),
