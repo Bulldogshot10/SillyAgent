@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 import { MemoryStore } from './memory-store.js';
@@ -19,7 +20,21 @@ function normalizeDirectories(input) {
     return { directories, root: path.resolve(directories.root) };
 }
 
-export async function getAgentMemoryStore(input) {
+export function getAgentScopedChatId(chatId, characterId = null) {
+    const safeChatId = typeof chatId === 'string' && chatId.trim().length > 0 && chatId.length <= 256
+        ? chatId.trim()
+        : null;
+    if (!safeChatId) return null;
+    const safeCharacterId = typeof characterId === 'string' && characterId.trim().length > 0 && characterId.length <= 256
+        ? characterId.trim()
+        : null;
+    if (!safeCharacterId) return safeChatId;
+    return 'character-chat-' + createHash('sha256')
+        .update(safeCharacterId + '\\0' + safeChatId)
+        .digest('hex');
+}
+
+export async function getAgentMemoryStore(input, { startWorker = true } = {}) {
     const { directories, root } = normalizeDirectories(input);
     const databasePath = path.join(root, 'sillyagent', 'memory.sqlite');
     if (!memoryStores.has(databasePath)) {
@@ -28,7 +43,7 @@ export async function getAgentMemoryStore(input) {
         opening.catch(() => memoryStores.delete(databasePath));
     }
     const store = await memoryStores.get(databasePath);
-    if (!workerHandles.has(databasePath)) {
+    if (startWorker && !workerHandles.has(databasePath)) {
         const starting = startReflectionWorker({
             store,
             directories: { ...directories, root },
@@ -37,6 +52,18 @@ export async function getAgentMemoryStore(input) {
         workerHandles.set(databasePath, starting);
     }
     return store;
+}
+
+export async function deleteAgentChatPartitionIfPresent(input, chatId, characterId = null) {
+    const { directories, root } = normalizeDirectories(input);
+    const scopeId = getAgentScopedChatId(chatId, characterId);
+    if (!scopeId) throw new TypeError('A valid chat ID is required to delete SillyAgent chat data.');
+    const databasePath = path.join(root, 'sillyagent', 'memory.sqlite');
+    if (!memoryStores.has(databasePath) && !existsSync(databasePath)) {
+        return { found: false, clearedTurns: 0, deletedMemories: 0, deletedProposals: 0, cancelledJobs: 0 };
+    }
+    const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
+    return { found: true, ...store.deleteChatPartition(scopeId) };
 }
 
 export async function getAgentSkillStore(input, characterId) {
