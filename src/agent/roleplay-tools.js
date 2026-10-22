@@ -141,13 +141,18 @@ async function searchActiveLore({ query, limit = 5 }, context = {}) {
 
     const matches = [];
     const searchedWorlds = [];
+    let totalLoreBytes = 0;
+    const resolvedDirectory = path.resolve(directory);
     for (const worldName of names) {
-        const filePath = path.resolve(directory, worldName + '.json');
-        if (path.dirname(filePath) !== path.resolve(directory)) continue;
+        const filePath = path.resolve(resolvedDirectory, worldName + '.json');
+        if (path.dirname(filePath) !== resolvedDirectory) continue;
         let data;
         try {
+            const info = await fsPromises.lstat(filePath);
+            if (info.isSymbolicLink() || !info.isFile() || info.size > 2 * 1024 * 1024
+                || totalLoreBytes + info.size > 8 * 1024 * 1024) continue;
+            totalLoreBytes += info.size;
             const raw = await fsPromises.readFile(filePath, 'utf8');
-            if (Buffer.byteLength(raw, 'utf8') > 5 * 1024 * 1024) continue;
             data = JSON.parse(raw);
         } catch {
             continue;
