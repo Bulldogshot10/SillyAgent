@@ -106,6 +106,60 @@ describe('SillyAgentRunner', () => {
         expect(calls.executed).toHaveLength(1);
     });
 
+    test('turns thrown dispatch errors and malformed calls into model-visible tool results', async () => {
+        const { runner, calls } = makeRunner({
+            execution: async () => {
+                throw new Error('dispatcher unavailable');
+            },
+        });
+        let steps = 0;
+        const result = await runner.run({
+            type: 'normal',
+            generateStep: async () => {
+                steps += 1;
+                if (steps === 1) {
+                    return {
+                        __sillyAgentRunner: true,
+                        kind: 'tool_calls',
+                        responseData: [
+                            toolCall('throws'),
+                            { id: 'malformed', function: { arguments: {} } },
+                        ],
+                    };
+                }
+                return 'recovered final answer';
+            },
+        });
+
+        expect(result).toBe('recovered final answer');
+        expect(calls.saved[0]).toHaveLength(2);
+        expect(calls.saved[0].every(invocation => invocation.error)).toBe(true);
+        expect(calls.saved[0][0].result).toContain('dispatcher unavailable');
+        expect(calls.saved[0][1].name).toBe('unknown_tool');
+        expect(calls.errors).toHaveLength(1);
+    });
+
+    test('unlocks the generation UI when tool-result persistence fails', async () => {
+        const stop = jest.fn();
+        const { runner } = makeRunner({}, {
+            saveToolInvocations: async () => {
+                throw new Error('chat persistence failed');
+            },
+            onStop: stop,
+        });
+
+        await expect(runner.run({
+            type: 'normal',
+            generateStep: async () => ({
+                __sillyAgentRunner: true,
+                kind: 'tool_calls',
+                responseData: [toolCall('persist-failure')],
+            }),
+        })).rejects.toThrow('chat persistence failed');
+
+        expect(stop).toHaveBeenCalledWith('normal');
+    });
+
     test('caps executed calls across the entire turn and records skipped calls', async () => {
         const { runner, calls } = makeRunner();
         let steps = 0;
