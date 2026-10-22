@@ -184,6 +184,46 @@ export function getReflectionProviderState(directories) {
  * @param {object[]} options.messages Chat messages for structured reflection.
  * @returns {Promise<string>} Assistant response content.
  */
+async function readResponseLimited(response) {
+    const reader = response.body?.getReader?.();
+    if (!reader) {
+        // Test doubles and compatible response objects may expose only text().
+        const body = await response.text();
+        if (Buffer.byteLength(body, 'utf8') > MAX_RESPONSE_BYTES) {
+            throw new Error('Reflection provider response exceeded 256 KiB.');
+        }
+        return body;
+    }
+
+    const chunks = [];
+    let totalBytes = 0;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = Buffer.from(value);
+            totalBytes += chunk.byteLength;
+            if (totalBytes > MAX_RESPONSE_BYTES) {
+                try {
+                    await reader.cancel();
+                } catch {
+                    // The response stream may already be cancelled or errored.
+                }
+                throw new Error('Reflection provider response exceeded 256 KiB.');
+            }
+            chunks.push(chunk);
+        }
+    } finally {
+        try {
+            reader.releaseLock();
+        } catch {
+            // Some compatible stream implementations release the reader themselves.
+        }
+    }
+
+    return Buffer.concat(chunks, totalBytes).toString('utf8');
+}
+
 export async function requestReflectionCompletion({ directories, config, messages }) {
     const validated = validateConfig({ ...config, enabled: true });
     const apiKey = validated.secretKey === 'none' ? '' : readStoredSecret(directories, validated.secretKey);
@@ -208,11 +248,7 @@ export async function requestReflectionCompletion({ directories, config, message
                 max_tokens: 1800,
             }),
         });
-        const body = await response.text();
-        if (Buffer.byteLength(body, 'utf8') > MAX_RESPONSE_BYTES) {
-            throw new Error('Reflection provider response exceeded 256 KiB.');
-        }
-        if (!response.ok) throw new Error('Reflection provider returned HTTP ' + response.status + '.');
+        const body = await readResponseLimited(response);        if (!response.ok) throw new Error('Reflection provider returned HTTP ' + response.status + '.');
         let payload;
         try {
             payload = JSON.parse(body);
