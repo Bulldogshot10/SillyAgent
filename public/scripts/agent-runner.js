@@ -172,35 +172,35 @@ export class SillyAgentRunner {
                         signature: null,
                         reasoning: result.reasoningText ?? null,
                     });
-            }
-
-            if (errors.length && !this.#shouldStop()) this.#onToolErrors(errors);
-            toolCallsExecuted += callsToRun.length;
-
-            if (invocations.length > 0) {
-                try {
-                    await this.#saveToolInvocations(invocations);
-                } catch (error) {
-                    // A persistence failure must not leave SillyTavern's generation UI locked.
-                    notifyStop(stepType);
-                    throw error;
                 }
-            }
 
-            if (this.#shouldStop()) {
-                notifyStop(stepType);
-                return undefined;
-            }
+                if (errors.length && !this.#shouldStop()) this.#onToolErrors(errors);
+                toolCallsExecuted += callsToRun.length;
 
-            // Stealth tools deliberately terminate their turn. Persist any
-            // ordinary results from the same batch before stopping. An empty
-            // dispatch cannot be allowed to create an infinite model loop.
-            if (stealthCalls.length || invocations.length === 0) {
-                notifyStop(stepType);
-                return undefined;
-            }
+                if (invocations.length > 0) {
+                    try {
+                        await this.#saveToolInvocations(invocations);
+                    } catch (error) {
+                        // A persistence failure must not leave SillyTavern's generation UI locked.
+                        notifyStop(stepType);
+                        throw error;
+                    }
+                }
 
-            rounds += 1;
+                if (this.#shouldStop()) {
+                    notifyStop(stepType);
+                    return undefined;
+                }
+
+                // Stealth tools deliberately terminate their turn. Persist any
+                // ordinary results from the same batch before stopping. An empty
+                // dispatch cannot be allowed to create an infinite model loop.
+                if (stealthCalls.length || invocations.length === 0) {
+                    notifyStop(stepType);
+                    return undefined;
+                }
+
+                rounds += 1;
             }
         } catch (error) {
             // A provider adapter may throw before its own generation cleanup runs.
