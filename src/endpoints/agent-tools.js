@@ -43,7 +43,7 @@ function getSafeWorldNames(value) {
 }
 
 function getScopedWorldId(value) {
-    const names = getSafeWorldNames(value).sort((a, b) => a.localeCompare(b));
+    const names = getSafeWorldNames(value).sort();
     if (names.length === 0) return null;
     return 'world-' + createHash('sha256').update(names.join('\0')).digest('hex');
 }
