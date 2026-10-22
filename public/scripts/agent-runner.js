@@ -16,6 +16,7 @@ export class SillyAgentRunner {
     #maxToolRounds;
     #maxToolCalls;
     #onStop;
+    #shouldStop;
 
     constructor({
         extractToolCalls,
@@ -23,6 +24,7 @@ export class SillyAgentRunner {
         saveToolInvocations,
         onToolErrors,
         onStop,
+        shouldStop,
         maxToolRounds = SillyAgentRunner.MAX_TOOL_ROUNDS,
         maxToolCalls = SillyAgentRunner.MAX_TOOL_CALLS,
     } = {}) {
@@ -37,6 +39,7 @@ export class SillyAgentRunner {
         this.#saveToolInvocations = saveToolInvocations;
         this.#onToolErrors = typeof onToolErrors === 'function' ? onToolErrors : () => {};
         this.#onStop = typeof onStop === 'function' ? onStop : () => {};
+        this.#shouldStop = typeof shouldStop === 'function' ? shouldStop : () => false;
         this.#maxToolRounds = Number.isInteger(maxToolRounds)
             ? Math.max(1, Math.min(SillyAgentRunner.MAX_TOOL_ROUNDS, maxToolRounds))
             : SillyAgentRunner.MAX_TOOL_ROUNDS;
@@ -65,6 +68,11 @@ export class SillyAgentRunner {
         const singleStepOnly = dryRun || ['quiet', 'continue', 'impersonate', 'swipe'].includes(type);
 
         while (true) {
+            if (this.#shouldStop()) {
+                this.#onStop(rounds === 0 ? type : 'normal');
+                return undefined;
+            }
+
             const withinBudget = !singleStepOnly
                 && rounds < this.#maxToolRounds
                 && toolCallsExecuted < this.#maxToolCalls;
@@ -102,6 +110,8 @@ export class SillyAgentRunner {
             const stealthCalls = [];
 
             for (const toolCall of callsToRun) {
+                if (this.#shouldStop()) break;
+
                 const toolName = typeof toolCall?.function?.name === 'string'
                     ? toolCall.function.name
                     : 'unknown_tool';
@@ -153,7 +163,7 @@ export class SillyAgentRunner {
                 });
             }
 
-            if (errors.length) this.#onToolErrors(errors);
+            if (errors.length && !this.#shouldStop()) this.#onToolErrors(errors);
             toolCallsExecuted += callsToRun.length;
 
             if (invocations.length > 0) {
@@ -164,6 +174,11 @@ export class SillyAgentRunner {
                     this.#onStop(stepType);
                     throw error;
                 }
+            }
+
+            if (this.#shouldStop()) {
+                this.#onStop(stepType);
+                return undefined;
             }
 
             // Stealth tools deliberately terminate their turn. Persist any
