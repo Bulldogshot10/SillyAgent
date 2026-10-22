@@ -73,6 +73,7 @@ function serializeMetadata(metadata) {
     if (typeof serialized !== 'string' || Buffer.byteLength(serialized, 'utf8') > MAX_METADATA_BYTES) {
         throw new TypeError('Memory metadata exceeds the allowed size.');
     }
+    if (CREDENTIAL_PATTERN.test(serialized)) throw new TypeError('Memory metadata must not contain credential-like secrets.');
     return serialized;
 }
 
