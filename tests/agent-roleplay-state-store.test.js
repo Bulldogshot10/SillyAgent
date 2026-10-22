@@ -58,6 +58,7 @@ describe('RoleplayStateStore', () => {
             patch: { condition: 'injured' },
         });
 
+        let conflict = null;
         try {
             store.updateState({
                 stateType: 'character',
@@ -65,11 +66,12 @@ describe('RoleplayStateStore', () => {
                 expectedVersion: 1,
                 patch: { condition: 'uninjured' },
             });
-            throw new Error('Expected a state conflict.');
         } catch (error) {
-            expect(error.code).toBe('state_conflict');
-            expect(error.currentVersion).toBe(2);
+            conflict = error;
         }
+        expect(conflict).toBeInstanceOf(Error);
+        expect(conflict.code).toBe('state_conflict');
+        expect(conflict.currentVersion).toBe(2);
 
         const history = store.getHistory({ stateType: 'character', scopeId: 'character-a.png' });
         expect(history.map(item => item.version)).toEqual([2, 1]);
