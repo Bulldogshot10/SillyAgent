@@ -111,6 +111,16 @@ describe('RoleplayStateStore', () => {
         expect(third.state.lastResolvedThreads).toEqual([]);
     });
 
+    test('requires an expected version at the persistent state write boundary', async () => {
+        store = await RoleplayStateStore.open(':memory:');
+
+        expect(() => store.updateState({
+            stateType: 'world',
+            scopeId: 'chat-one',
+            patch: { location: 'New observatory' },
+        })).toThrow(/expectedVersion is required/u);
+    });
+
     test('rejects unsafe keys, credential-like strings, oversized patches, and invalid scopes', async () => {
         store = await RoleplayStateStore.open(':memory:');
 
