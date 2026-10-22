@@ -1,35 +1,38 @@
 /**
  * SillyAgent's native model/tool orchestration loop.
  *
- * Provider adapters still format requests and normalize vendor response formats,
- * but this runner owns the cycle: request -> tool dispatch -> persist result ->
- * request again. It enforces SillyAgent-specific budgets independently of the
- * legacy SillyTavern recursion setting.
+ * Provider adapters normalize vendor response formats, but this runner owns
+ * the cycle: request -> bounded tool dispatch -> persist tool results -> request
+ * again. It does not call SillyTavern's recursive tool-execution loop.
  */
 export class SillyAgentRunner {
     static MAX_TOOL_ROUNDS = 8;
     static MAX_TOOL_CALLS = 24;
 
-    #executeToolCalls;
+    #extractToolCalls;
+    #executeToolCall;
     #saveToolInvocations;
     #setToolCallsAllowed;
     #onToolErrors;
     #onStop;
 
     constructor({
-        executeToolCalls,
+        extractToolCalls,
+        executeToolCall,
         saveToolInvocations,
         setToolCallsAllowed,
         onToolErrors,
         onStop,
     } = {}) {
-        if (typeof executeToolCalls !== 'function'
+        if (typeof extractToolCalls !== 'function'
+            || typeof executeToolCall !== 'function'
             || typeof saveToolInvocations !== 'function'
             || typeof setToolCallsAllowed !== 'function') {
-            throw new TypeError('SillyAgentRunner requires tool execution, result persistence, and tool-policy adapters.');
+            throw new TypeError('SillyAgentRunner requires provider normalization, tool dispatch, result persistence, and policy adapters.');
         }
 
-        this.#executeToolCalls = executeToolCalls;
+        this.#extractToolCalls = extractToolCalls;
+        this.#executeToolCall = executeToolCall;
         this.#saveToolInvocations = saveToolInvocations;
         this.#setToolCallsAllowed = setToolCallsAllowed;
         this.#onToolErrors = typeof onToolErrors === 'function' ? onToolErrors : () => {};
@@ -37,9 +40,9 @@ export class SillyAgentRunner {
     }
 
     /**
-     * Run one logical assistant turn. A generation step returns either its
-     * normal value or a structured tool-call handoff. The runner, not the
-     * provider adapter, decides whether and when the next model turn begins.
+     * Run one logical assistant turn. Each provider round returns either its
+     * normal result or a structured tool-call handoff. The runner decides
+     * whether the loop continues and enforces turn-wide budgets.
      * @param {object} options Turn context.
      * @param {string} options.type SillyTavern generation type.
      * @param {object} [options.generationOptions] Existing generation context.
@@ -77,23 +80,57 @@ export class SillyAgentRunner {
                     return undefined;
                 }
 
-                const remainingCalls = SillyAgentRunner.MAX_TOOL_CALLS - toolCallsExecuted;
-                const execution = await this.#executeToolCalls(result.responseData, {
-                    reasoningText: result.reasoningText ?? null,
-                    maxCalls: remainingCalls,
-                });
-
-                toolCallsExecuted += execution.invocations.length;
-                if (execution.errors.length) this.#onToolErrors(execution.errors);
-
-                // Stealth calls intentionally terminate their turn, matching their
-                // contract. An empty dispatch cannot be allowed to spin forever.
-                if (execution.stealthCalls.length || execution.invocations.length === 0) {
+                const modelToolCalls = this.#extractToolCalls(result.responseData);
+                if (!Array.isArray(modelToolCalls) || modelToolCalls.length === 0) {
                     this.#onStop(stepType);
                     return undefined;
                 }
 
-                await this.#saveToolInvocations(execution.invocations);
+                const remainingCalls = SillyAgentRunner.MAX_TOOL_CALLS - toolCallsExecuted;
+                const callsToRun = modelToolCalls.slice(0, remainingCalls);
+                const skippedCalls = modelToolCalls.length - callsToRun.length;
+                const invocations = [];
+                const errors = [];
+                const stealthCalls = [];
+
+                for (const toolCall of callsToRun) {
+                    const execution = await this.#executeToolCall(toolCall, {
+                        reasoningText: result.reasoningText ?? null,
+                    });
+
+                    if (execution?.error instanceof Error) errors.push(execution.error);
+                    if (execution?.stealth) {
+                        stealthCalls.push(toolCall?.function?.name ?? 'unknown');
+                    }
+                    if (execution?.invocation) invocations.push(execution.invocation);
+                }
+
+                if (skippedCalls > 0) {
+                    const budgetError = new Error('SillyAgent reached its total tool-call budget. Some requested calls were not executed.');
+                    errors.push(budgetError);
+                    invocations.push({
+                        id: 'agent-tool-budget-' + Date.now(),
+                        displayName: 'SillyAgent tool budget',
+                        name: 'agent_tool_budget',
+                        parameters: JSON.stringify({ skippedCalls }),
+                        result: JSON.stringify({ error: 'tool_call_budget_exceeded', skippedCalls }),
+                        error: true,
+                        signature: null,
+                        reasoning: result.reasoningText ?? null,
+                    });
+                }
+
+                if (errors.length) this.#onToolErrors(errors);
+                toolCallsExecuted += callsToRun.length;
+
+                // Stealth tools deliberately terminate their turn. An empty
+                // dispatch cannot be allowed to create an infinite model loop.
+                if (stealthCalls.length || invocations.length === 0) {
+                    this.#onStop(stepType);
+                    return undefined;
+                }
+
+                await this.#saveToolInvocations(invocations);
                 rounds += 1;
             }
         } finally {
