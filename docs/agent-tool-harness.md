@@ -1,15 +1,16 @@
 # Native SillyAgent agent harness
 
-SillyAgent is wired into SillyTavern's core. It uses the existing provider-aware `ToolManager` generation loop rather than introducing a second competing loop. Tool implementations and durable state live in the server process; the browser receives only function schemas and sends tool arguments plus current conversation context.
+SillyAgent is wired into SillyTavern's core and owns the model/tool loop. It does not invoke SillyTavern's recursive `ToolManager.invokeFunctionTools` path. SillyTavern's provider adapters remain responsible for transport-specific request formatting and response normalization; the SillyAgent runner owns the logical assistant turn, dispatch policy, budgets, tool result persistence, and continuation.
 
 ## Execution lifecycle
 
-1. Before a supported chat-completion request, `ToolManager` fetches `GET /api/agent/tools` and registers the returned function definitions in its reserved `sillyagent_` namespace. For example, server tool `world_get_state` appears to the model as `sillyagent_world_get_state`.
-2. The model can request one or more tools. SillyTavern's native tool-call loop invokes the registered browser adapters and sends `POST /api/agent/tools/execute` with the function name, validated arguments, current character/chat IDs, and active World Info book names.
-3. The server resolves the per-user stores, checks toolset policy and JSON schema, validates scoped context, applies timeouts and response limits, and calls only a registered trusted handler. Filesystem paths and secret values are never model-selected arguments.
-4. The result or a bounded error is returned as a tool result. SillyTavern adds it to the conversation and performs its normal continuation generation. Tool-call recursion remains subject to SillyTavern's existing provider and recursion settings.
+1. The core prompt-building path assembles the conversation. For supported models, the provider adapter obtains the registered function schemas and includes them in the outbound request only while the SillyAgent turn policy allows tool calls.
+2. The one-step generation function, `generateStep`, performs exactly one provider round. If it receives a function-call response, it returns a structured handoff to `SillyAgentRunner`; it does not execute tools or recursively call `Generate`.
+3. `SillyAgentRunner` normalizes provider-specific tool-call shapes, executes calls sequentially, collects success/error results, persists tool results into the conversation, and starts the next model step. After eight tool rounds or 24 calls, it disables tool schemas for a final tool-free generation.
+4. SillyAgent server tools are dispatched directly to `POST /api/agent/tools/execute` with the model-supplied name and arguments plus current chat/character/lore context. Non-SillyAgent user tools retain a compatibility dispatch adapter, but they are also executed under the SillyAgent-owned loop.
+5. Tool results become part of the conversation before the next step, so the model can observe the result, revise its plan, and decide whether another call is useful. Budget exhaustion leads to a final response instead of unbounded recursion.
 
-This gives the model a real read/act/observe cycle without a custom provider implementation or a second tool loop. Automatic memory capture and reflection remain independent of model tool calls.
+This separates the agent controller from provider transport. We intentionally reuse SillyTavern's vendor-specific request/response adapters rather than duplicating every upstream API's authentication, streaming, reasoning-signature, and tool-call wire format.
 
 ## Registered tool surface
 
@@ -44,7 +45,7 @@ The browser passes active World Info book names from SillyTavern's current conte
 
 All tool definitions are server-owned and schema-validated. The runtime applies per-tool read/write/external permissions, toolset allow-lists, bounded timeouts, and a 32 KiB maximum JSON result. Write operations for the world, character, and scene toolsets can be disabled with `SILLYTAVERN_AGENTTOOLS_ROLEPLAYSTATEWRITESENABLED=false`. Memory and skill write policies retain their existing `SILLYTAVERN_AGENTTOOLS_MEMORYPROPOSALSENABLED` and `SILLYTAVERN_AGENTTOOLS_SKILLWRITESENABLED` switches.
 
-Character state tools require an active single character. World and scene tools require an active chat. Lore search returns no matches when no active books are available. A state conflict asks the model to re-read and retry; an unavailable store or failed tool returns an error envelope to the tool-call loop. Arbitrary shell execution, arbitrary JavaScript evaluation, unrestricted filesystem tools, or provider credentials are not exposed.
+Character state tools require an active single character. World and scene tools require an active chat. Lore search returns no matches when no active books are available. A state conflict asks the model to re-read and retry; an unavailable store or failed tool becomes a tool result so the model can recover. Arbitrary shell execution, arbitrary JavaScript evaluation, unrestricted filesystem tools, or provider credentials are not exposed.
 
 ## Relationship to automatic memory
 
@@ -54,4 +55,4 @@ See [native autonomous memory and reflection](agent-memory-autonomy.md) for the 
 
 ## Verification
 
-Unit and endpoint tests cover registry contracts, permission denials, tool execution, isolated character/chat state, JSON merge patches, version conflicts, scene advancement, active-lorebook filtering, dice bounds, autonomous memory, durable reflection jobs, and skill revisions.
+Unit and endpoint tests cover runner round budgets, tool-free final responses, registry contracts, permission denials, tool execution, isolated character/chat state, JSON merge patches, version conflicts, scene advancement, active-lorebook filtering, dice bounds, autonomous memory, durable reflection jobs, and skill revisions.
