@@ -42,6 +42,11 @@ describe('ToolRegistry', () => {
         registry.registerTool(base);
         expect(() => registry.registerTool(base)).toThrow(/already registered/);
         expect(() => registry.registerTool({ ...base, name: 'test.bad', inputSchema: { type: 'missing' } })).toThrow();
+        expect(() => registry.registerTool({
+            ...base,
+            name: 'test.inherited',
+            inputSchema: { type: 'object', properties: {}, required: ['toString'], additionalProperties: false },
+        })).toThrow(/declared properties/u);
     });
 
     test('filters toolsets and disabled tools', () => {
