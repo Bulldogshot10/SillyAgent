@@ -3,10 +3,12 @@ import { createHash } from 'node:crypto';
 
 import { MemoryStore } from './memory-store.js';
 import { SkillStore } from './skill-store.js';
+import { RoleplayStateStore } from './roleplay-state-store.js';
 import { startReflectionWorker } from './reflection-worker.js';
 
 const memoryStores = new Map();
 const skillStores = new Map();
+const roleplayStateStores = new Map();
 const workerHandles = new Map();
 
 function normalizeDirectories(input) {
@@ -51,6 +53,24 @@ export async function getAgentSkillStore(input, characterId) {
         opening.catch(() => skillStores.delete(databasePath));
     }
     return await skillStores.get(databasePath);
+}
+
+/**
+ * Get the durable roleplay state store for a SillyTavern data root.
+ * State partitions are keyed by validated character/chat identifiers, never by
+ * caller-supplied filesystem paths.
+ * @param {string|object} input User data directory or directory object.
+ * @returns {Promise<RoleplayStateStore>} Persistent roleplay state store.
+ */
+export async function getAgentRoleplayStateStore(input) {
+    const { root } = normalizeDirectories(input);
+    const databasePath = path.join(root, 'sillyagent', 'roleplay-state.sqlite');
+    if (!roleplayStateStores.has(databasePath)) {
+        const opening = RoleplayStateStore.open(databasePath);
+        roleplayStateStores.set(databasePath, opening);
+        opening.catch(() => roleplayStateStores.delete(databasePath));
+    }
+    return await roleplayStateStores.get(databasePath);
 }
 
 /**
