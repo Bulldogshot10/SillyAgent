@@ -5625,7 +5625,7 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
  * @param {boolean} dryRun Prompt preview mode.
  * @returns {Promise<*>} Final generated result.
  */
-async function executeHarnessToolCall(toolCall, { reasoningText = null } = {}) {
+async function executeHarnessToolCall(toolCall, { reasoningText = null, signal = null } = {}) {
     const name = toolCall?.function?.name;
     const id = typeof toolCall?.id === 'string' ? toolCall.id : 'agent-tool-' + Date.now();
     const parameters = toolCall?.function?.arguments ?? {};
@@ -5657,7 +5657,7 @@ async function executeHarnessToolCall(toolCall, { reasoningText = null } = {}) {
                     activeCharacterId: selected_group ? null : (characters[this_chid]?.avatar || null),
                     activeWorldNames: getSillyAgentActiveWorldNames(),
                 }),
-                signal: abortController?.signal,
+                signal: signal ?? abortController?.signal,
             });
             const execution = await executionResponse.json().catch(() => null);
             if (!executionResponse.ok || !execution?.ok) {
@@ -5725,7 +5725,7 @@ export async function Generate(type, options = {}, dryRun = false) {
 
     const runner = new SillyAgentRunner({
         extractToolCalls: data => ToolManager.extractToolCalls(data),
-        executeToolCall: executeHarnessToolCall,
+        executeToolCall: (toolCall, context) => executeHarnessToolCall(toolCall, { ...context, signal: turnAbortController.signal }),
         saveToolInvocations: invocations => ToolManager.saveFunctionToolInvocations(invocations),
         onToolErrors: errors => ToolManager.showToolCallError(errors),
         onStop: generationType => unblockGeneration(generationType),
@@ -5738,6 +5738,7 @@ export async function Generate(type, options = {}, dryRun = false) {
             type,
             generationOptions: { ...options, signal: turnAbortController.signal },
             dryRun,
+            signal: turnAbortController.signal,
             generateStep: async (stepType, stepOptions, policy) => await generateStep(
                 stepType,
                 { ...stepOptions, signal: turnAbortController.signal, allowToolCalls: policy.allowToolCalls },
