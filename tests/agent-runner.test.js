@@ -139,6 +139,47 @@ describe('SillyAgentRunner', () => {
         expect(calls.errors).toHaveLength(1);
     });
 
+    test('stops between tool dispatch and the next model round when cancelled', async () => {
+        let cancelled = false;
+        const stop = jest.fn();
+        const { runner, calls } = makeRunner({
+            execution: async (toolCall, _options, state) => {
+                state.executed.push({ cancelledDuringCall: toolCall.id });
+                cancelled = true;
+                return {
+                    invocation: {
+                        id: toolCall.id,
+                        name: toolCall.function.name,
+                        parameters: '{}',
+                        result: 'completed before cancellation',
+                        error: false,
+                    },
+                };
+            },
+        }, {
+            shouldStop: () => cancelled,
+            onStop: stop,
+        });
+        let modelRounds = 0;
+
+        const result = await runner.run({
+            type: 'normal',
+            generateStep: async () => {
+                modelRounds += 1;
+                return {
+                    __sillyAgentRunner: true,
+                    kind: 'tool_calls',
+                    responseData: [toolCall('cancel-after-this')],
+                };
+            },
+        });
+
+        expect(result).toBeUndefined();
+        expect(modelRounds).toBe(1);
+        expect(calls.saved).toHaveLength(1);
+        expect(stop).toHaveBeenCalledWith('normal');
+    });
+
     test('unlocks the generation UI when tool-result persistence fails', async () => {
         const stop = jest.fn();
         const { runner } = makeRunner({}, {
