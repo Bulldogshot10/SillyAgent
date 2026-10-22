@@ -250,6 +250,11 @@ export class ToolManager {
     /** @type {Map<string, string>} Names and signatures of tools imported from the SillyAgent server. */
     static #serverTools = new Map();
 
+    // Per-turn gate controlled by SillyAgentRunner. Provider payload builders
+    // consult this before including tools, so exhausted rounds get a true
+    // tool-free final generation rather than another recursive call.
+    static #harnessToolCallsAllowed = true;
+
     static #INPUT_DELTA_KEY = '__input_json_delta';
 
     /**
@@ -789,12 +794,16 @@ export class ToolManager {
      * @param {string} model Optional model name
      * @returns {boolean} Whether tool calls can be performed for the given type
      */
+    static setHarnessToolCallsAllowed(allowed) {
+        this.#harnessToolCallsAllowed = allowed === true;
+    }
+
     static canPerformToolCalls(type, settings = null, model = null) {
         settings = settings ?? oai_settings;
         model = model ?? getChatCompletionModel(settings);
         const noToolCallTypes = ['impersonate', 'quiet', 'continue'];
         const isSupported = ToolManager.isToolCallingSupported(settings, model);
-        return isSupported && !noToolCallTypes.includes(type);
+        return this.#harnessToolCallsAllowed && isSupported && !noToolCallTypes.includes(type);
     }
 
     /**
@@ -881,7 +890,7 @@ export class ToolManager {
      * @param {any} data Reply data
      * @returns {Promise<ToolInvocationResult>} Successful tool invocations
      */
-    static async invokeFunctionTools(data, { reasoningText = null } = {}) {
+    static async invokeFunctionTools(data, { reasoningText = null, maxCalls = 24 } = {}) {
         /** @type {ToolInvocationResult} */
         const result = {
             invocations: [],
@@ -894,7 +903,11 @@ export class ToolManager {
             return result;
         }
 
-        for (const toolCall of toolCalls) {
+        const safeMaxCalls = Number.isInteger(maxCalls) ? Math.max(0, Math.min(24, maxCalls)) : 24;
+        const boundedToolCalls = toolCalls.slice(0, safeMaxCalls);
+        const skippedToolCalls = Math.max(0, toolCalls.length - boundedToolCalls.length);
+
+        for (const toolCall of boundedToolCalls) {
             if (!toolCall || !toolCall.function || typeof toolCall.function !== 'object') {
                 continue;
             }
@@ -948,6 +961,21 @@ export class ToolManager {
                 reasoning: reasoningText || null,
             };
             result.invocations.push(invocation);
+        }
+
+        if (skippedToolCalls > 0) {
+            const budgetError = new Error('The SillyAgent turn tool-call budget was reached. Some requested calls were not executed; continue with the available results.');
+            result.errors.push(budgetError);
+            result.invocations.push({
+                id: 'agent-tool-budget-' + Date.now(),
+                displayName: 'SillyAgent tool budget',
+                name: 'agent_tool_budget',
+                parameters: JSON.stringify({ skippedCalls: skippedToolCalls }),
+                result: JSON.stringify({ error: 'tool_call_budget_exceeded', skippedCalls: skippedToolCalls }),
+                error: true,
+                signature: null,
+                reasoning: reasoningText || null,
+            });
         }
 
         return result;
