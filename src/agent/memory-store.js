@@ -249,6 +249,10 @@ export class MemoryStore {
             'scope_id TEXT NOT NULL DEFAULT \'\', event_id TEXT NOT NULL, created_at INTEGER NOT NULL, ' +
             'PRIMARY KEY(scope, scope_id, event_id));',
         );
+        this.#db.exec(
+            'CREATE TABLE IF NOT EXISTS memory_deleted_chat_partitions (' +
+            'scope_id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);',
+        );
         this.#db.exec('CREATE TABLE IF NOT EXISTS memory_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
         this.#db.exec(
             'CREATE TABLE IF NOT EXISTS memory_capture_keys (' +
@@ -921,6 +925,10 @@ export class MemoryStore {
             let cancelledJobs = 0;
 
             for (const scopeId of chatScopes) {
+                this.#db.prepare(
+                    'INSERT INTO memory_deleted_chat_partitions(scope_id, deleted_at) VALUES (?, ?) ' +
+                    'ON CONFLICT(scope_id) DO UPDATE SET deleted_at = excluded.deleted_at',
+                ).run(scopeId, Date.now());
                 deletedMemories += this.#db.prepare(
                     'SELECT COUNT(*) AS count FROM memories WHERE scope = \'chat\' AND scope_id = ?',
                 ).get(scopeId).count;
@@ -1008,6 +1016,10 @@ export class MemoryStore {
         const target = normalizeScope('chat', scopeId);
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            this.#db.prepare(
+                'INSERT INTO memory_deleted_chat_partitions(scope_id, deleted_at) VALUES (?, ?) ' +
+                'ON CONFLICT(scope_id) DO UPDATE SET deleted_at = excluded.deleted_at',
+            ).run(target.scopeId, Date.now());
             const clearedTurns = this.#db.prepare(
                 'SELECT COUNT(*) AS count FROM memory_events WHERE scope = ? AND scope_id = ? ' +
                 'AND event_type IN (?, ?)',
@@ -1279,6 +1291,13 @@ export class MemoryStore {
         if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Event timestamp must be a non-negative integer.');
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            const deletedScope = this.#db.prepare(
+                'SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1',
+            ).get(target.scopeId);
+            if (deletedScope) {
+                this.#db.exec('COMMIT;');
+                return { event: null, duplicate: false, deleted: true };
+            }
             const existing = this.#db.prepare(
                 'SELECT e.* FROM memory_capture_keys k INNER JOIN memory_events e ON e.id = k.event_id WHERE k.capture_key = ?',
             ).get(key);
@@ -1299,6 +1318,27 @@ export class MemoryStore {
             ).run(key, event.id, createdAt);
             this.#db.exec('COMMIT;');
             return { event, duplicate: false };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    /**
+     * Reactivate a chat partition only when the core lifecycle reports that a chat is open/created.
+     * Late capture requests after deletion stay rejected until this explicit transition.
+     * @param {string} scopeId Chat partition ID.
+     * @returns {{activated: boolean}} Whether a deletion tombstone was removed.
+     */
+    activateChatPartition(scopeId) {
+        const target = normalizeScope('chat', scopeId);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const result = this.#db.prepare(
+                'DELETE FROM memory_deleted_chat_partitions WHERE scope_id = ?',
+            ).run(target.scopeId);
+            this.#db.exec('COMMIT;');
+            return { activated: result.changes > 0 };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
             throw error;
