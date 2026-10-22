@@ -7,7 +7,7 @@ import path from 'node:path';
 import { MemoryStore } from '../src/agent/memory-store.js';
 import { SkillStore } from '../src/agent/skill-store.js';
 import { runReflectionWorkerOnce } from '../src/agent/reflection-worker.js';
-import { saveReflectionProviderConfig } from '../src/agent/reflection-provider.js';
+import { requestReflectionCompletion, saveReflectionProviderConfig } from '../src/agent/reflection-provider.js';
 
 let root;
 let store;
@@ -366,6 +366,34 @@ describe('server-owned reflection worker', () => {
 });
 
 describe('reflection provider configuration', () => {
+    test('cancels streamed provider responses that exceed the hard byte limit', async () => {
+        let cancelled = false;
+        globalThis.fetch = jest.fn(async () => ({
+            ok: true,
+            status: 200,
+            body: new ReadableStream({
+                start(controller) {
+                    controller.enqueue(new Uint8Array(256 * 1024 + 1));
+                },
+                cancel() {
+                    cancelled = true;
+                },
+            }),
+        }));
+
+        await expect(requestReflectionCompletion({
+            directories: { root },
+            config: {
+                enabled: true,
+                endpoint: 'https://reflection.example/v1/chat/completions',
+                model: 'fixture-model',
+                secretKey: 'none',
+            },
+            messages: [{ role: 'system', content: 'test' }],
+        })).rejects.toThrow(/exceeded 256 KiB/u);
+        expect(cancelled).toBe(true);
+    });
+
     test('never persists an API secret and rejects embedded URL credentials', async () => {
         saveReflectionProviderConfig(root, {
             enabled: false,
