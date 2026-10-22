@@ -76,102 +76,102 @@ export class SillyAgentRunner {
 
         try {
             while (true) {
-            if (this.#shouldStop()) {
-                notifyStop(rounds === 0 ? type : 'normal');
-                return undefined;
-            }
+                if (this.#shouldStop()) {
+                    notifyStop(rounds === 0 ? type : 'normal');
+                    return undefined;
+                }
 
-            const withinBudget = !singleStepOnly
-                && rounds < this.#maxToolRounds
-                && toolCallsExecuted < this.#maxToolCalls;
+                const withinBudget = !singleStepOnly
+                    && rounds < this.#maxToolRounds
+                    && toolCallsExecuted < this.#maxToolCalls;
 
-            const stepType = rounds === 0 ? type : 'normal';
-            const result = await generateStep(stepType, {
-                ...generationOptions,
-                depth: originalDepth + rounds,
-            }, {
-                allowToolCalls: withinBudget,
-                round: rounds,
-                toolCallsRemaining: this.#maxToolCalls - toolCallsExecuted,
-            });
+                const stepType = rounds === 0 ? type : 'normal';
+                const result = await generateStep(stepType, {
+                    ...generationOptions,
+                    depth: originalDepth + rounds,
+                }, {
+                    allowToolCalls: withinBudget,
+                    round: rounds,
+                    toolCallsRemaining: this.#maxToolCalls - toolCallsExecuted,
+                });
 
-            if (!result || result.__sillyAgentRunner !== true || result.kind !== 'tool_calls') {
-                return result;
-            }
+                if (!result || result.__sillyAgentRunner !== true || result.kind !== 'tool_calls') {
+                    return result;
+                }
 
-            if (!withinBudget) {
-                notifyStop(stepType);
-                return undefined;
-            }
+                if (!withinBudget) {
+                    notifyStop(stepType);
+                    return undefined;
+                }
 
-            const modelToolCalls = this.#extractToolCalls(result.responseData);
-            if (!Array.isArray(modelToolCalls) || modelToolCalls.length === 0) {
-                notifyStop(stepType);
-                return undefined;
-            }
+                const modelToolCalls = this.#extractToolCalls(result.responseData);
+                if (!Array.isArray(modelToolCalls) || modelToolCalls.length === 0) {
+                    notifyStop(stepType);
+                    return undefined;
+                }
 
-            const remainingCalls = this.#maxToolCalls - toolCallsExecuted;
-            const callsToRun = modelToolCalls.slice(0, remainingCalls);
-            const skippedCalls = modelToolCalls.length - callsToRun.length;
-            const invocations = [];
-            const errors = [];
-            const stealthCalls = [];
+                const remainingCalls = this.#maxToolCalls - toolCallsExecuted;
+                const callsToRun = modelToolCalls.slice(0, remainingCalls);
+                const skippedCalls = modelToolCalls.length - callsToRun.length;
+                const invocations = [];
+                const errors = [];
+                const stealthCalls = [];
 
-            for (const toolCall of callsToRun) {
-                if (this.#shouldStop()) break;
+                for (const toolCall of callsToRun) {
+                    if (this.#shouldStop()) break;
 
-                const toolName = typeof toolCall?.function?.name === 'string'
-                    ? toolCall.function.name
-                    : 'unknown_tool';
-                const parameters = toolCall?.function?.arguments ?? {};
-                let execution;
+                    const toolName = typeof toolCall?.function?.name === 'string'
+                        ? toolCall.function.name
+                        : 'unknown_tool';
+                    const parameters = toolCall?.function?.arguments ?? {};
+                    let execution;
 
-                try {
-                    if (toolName === 'unknown_tool') {
-                        throw new Error('The provider returned a malformed tool call without a function name.');
+                    try {
+                        if (toolName === 'unknown_tool') {
+                            throw new Error('The provider returned a malformed tool call without a function name.');
+                        }
+                        execution = await this.#executeToolCall(toolCall, {
+                            reasoningText: result.reasoningText ?? null,
+                            signal,
+                        });
+                    } catch (caught) {
+                        const error = caught instanceof Error ? caught : new Error('Tool execution failed.');
+                        errors.push(error);
+                        invocations.push({
+                            id: typeof toolCall?.id === 'string' ? toolCall.id : 'agent-tool-error-' + (toolCallsExecuted + callsToRun.indexOf(toolCall)),
+                            displayName: toolName,
+                            name: toolName,
+                            parameters: typeof parameters === 'string' ? parameters : JSON.stringify(parameters) ?? '{}',
+                            result: error.toString(),
+                            error: true,
+                            signature: toolCall?.signature || null,
+                            reasoning: result.reasoningText ?? null,
+                        });
+                        continue;
                     }
-                    execution = await this.#executeToolCall(toolCall, {
-                        reasoningText: result.reasoningText ?? null,
-                        signal,
-                    });
-                } catch (caught) {
-                    const error = caught instanceof Error ? caught : new Error('Tool execution failed.');
-                    errors.push(error);
+
+                    if (execution?.error instanceof Error) errors.push(execution.error);
+                    if (execution?.stealth) {
+                        stealthCalls.push(toolName);
+                        // Stealth actions end the agent turn; do not execute later calls in this batch.
+                        break;
+                    }
+                    if (execution?.invocation) invocations.push(execution.invocation);
+                }
+
+                if (skippedCalls > 0) {
+                    const budgetError = new Error('SillyAgent reached its total tool-call budget. Some requested calls were not executed.');
+                    errors.push(budgetError);
                     invocations.push({
-                        id: typeof toolCall?.id === 'string' ? toolCall.id : 'agent-tool-error-' + (toolCallsExecuted + callsToRun.indexOf(toolCall)),
-                        displayName: toolName,
-                        name: toolName,
-                        parameters: typeof parameters === 'string' ? parameters : JSON.stringify(parameters) ?? '{}',
-                        result: error.toString(),
+                        id: 'agent-tool-budget-' + Date.now(),
+                        displayName: 'SillyAgent tool budget',
+                        name: 'agent_tool_budget',
+                        parameters: JSON.stringify({ skippedCalls }),
+                        result: JSON.stringify({ error: 'tool_call_budget_exceeded', skippedCalls }),
                         error: true,
-                        signature: toolCall?.signature || null,
+                        signature: null,
                         reasoning: result.reasoningText ?? null,
                     });
-                    continue;
-                }
-
-                if (execution?.error instanceof Error) errors.push(execution.error);
-                if (execution?.stealth) {
-                    stealthCalls.push(toolName);
-                    // Stealth actions end the agent turn; do not execute later calls in this batch.
-                    break;
-                }
-                if (execution?.invocation) invocations.push(execution.invocation);
-            }
-
-            if (skippedCalls > 0) {
-                const budgetError = new Error('SillyAgent reached its total tool-call budget. Some requested calls were not executed.');
-                errors.push(budgetError);
-                invocations.push({
-                    id: 'agent-tool-budget-' + Date.now(),
-                    displayName: 'SillyAgent tool budget',
-                    name: 'agent_tool_budget',
-                    parameters: JSON.stringify({ skippedCalls }),
-                    result: JSON.stringify({ error: 'tool_call_budget_exceeded', skippedCalls }),
-                    error: true,
-                    signature: null,
-                    reasoning: result.reasoningText ?? null,
-                });
             }
 
             if (errors.length && !this.#shouldStop()) this.#onToolErrors(errors);
