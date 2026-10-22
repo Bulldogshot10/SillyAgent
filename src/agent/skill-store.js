@@ -6,6 +6,7 @@ const MAX_NAME_LENGTH = 120;
 const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_CONTENT_LENGTH = 12000;
 const MAX_REASON_LENGTH = 1000;
+const CREDENTIAL_PATTERN = /(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|Bearer\\s+[A-Za-z0-9._~+/-]{20,})/u;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
@@ -284,6 +285,14 @@ export class SkillStore {
         const normalizedDescription = normalizeText(description, MAX_DESCRIPTION_LENGTH, 'Skill description', 8);
         const normalizedContent = normalizeText(content, MAX_CONTENT_LENGTH, 'Skill content', 80);
         const normalizedReason = normalizeText(changeReason, MAX_REASON_LENGTH, 'Change reason');
+        for (const [label, value] of [
+            ['Skill name', normalizedName],
+            ['Skill description', normalizedDescription],
+            ['Skill content', normalizedContent],
+            ['Change reason', normalizedReason],
+        ]) {
+            if (CREDENTIAL_PATTERN.test(value)) throw new TypeError(label + ' must not contain credential-like secrets.');
+        }
         const normalizedSource = normalizeText(source, 32, 'Skill source');
         if (!/^[a-z][a-z0-9_-]*$/u.test(normalizedSource)) throw new TypeError('Skill source must be a lowercase identifier.');
         const normalizedSlug = slug === undefined || slug === null || slug === ''
