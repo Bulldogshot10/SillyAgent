@@ -368,10 +368,15 @@ export class MemoryStore {
         try {
             if (requireCurrentEvidenceIds.length) {
                 const evidenceRows = this.#db.prepare(
-                    'SELECT id FROM memory_events WHERE event_type IN (?, ?) AND id IN ('
-                    + requireCurrentEvidenceIds.map(() => '?').join(', ') + ')',
+                    'SELECT id, scope_id, json_extract(metadata_json, \'$.characterId\') AS character_id ' +
+                    'FROM memory_events WHERE event_type IN (?, ?) AND id IN (' +
+                    requireCurrentEvidenceIds.map(() => '?').join(', ') + ')',
                 ).all('chat.user_turn', 'chat.assistant_turn', ...requireCurrentEvidenceIds);
-                if (evidenceRows.length !== requireCurrentEvidenceIds.length) {
+                const evidenceMatchesTarget = evidenceRows.length === requireCurrentEvidenceIds.length
+                    && evidenceRows.every(event => target.scope === 'chat'
+                        ? event.scope_id === target.scopeId
+                        : target.scope === 'character' && event.character_id === target.scopeId);
+                if (!evidenceMatchesTarget) {
                     this.#db.exec('ROLLBACK;');
                     return { memory: null, duplicate: false, forgotten: false, staleEvidence: true, requiresReview: approvalRequired };
                 }
