@@ -78,7 +78,7 @@ function serializeMetadata(metadata) {
 }
 
 function getMemoryContentHash(content) {
-    const normalized = content.normalize('NFKC').toLowerCase().replace(/\\s+/gu, ' ').trim();
+    const normalized = content.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim();
     return createHash('sha256').update(normalized).digest('hex');
 }
 
@@ -239,8 +239,8 @@ export class MemoryStore {
         this.#db.exec('CREATE INDEX IF NOT EXISTS memories_scope_updated ON memories(scope, scope_id, updated_at DESC);');
         this.#db.exec(
             'CREATE TABLE IF NOT EXISTS memory_forget_tombstones (' +
-            'scope TEXT NOT NULL CHECK (scope IN (\\'user\\',\\'character\\',\\'chat\\')), ' +
-            'scope_id TEXT NOT NULL DEFAULT \\'\\', content_hash TEXT NOT NULL, created_at INTEGER NOT NULL, ' +
+            'scope TEXT NOT NULL CHECK (scope IN (\'user\',\'character\',\'chat\')), ' +
+            'scope_id TEXT NOT NULL DEFAULT \'\', content_hash TEXT NOT NULL, created_at INTEGER NOT NULL, ' +
             'PRIMARY KEY(scope, scope_id, content_hash));',
         );
         this.#db.exec('CREATE TABLE IF NOT EXISTS memory_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
