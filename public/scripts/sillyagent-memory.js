@@ -88,7 +88,9 @@ function ensureMemoryToolCalling(runtime) {
 
 function injectInstructions(chat) {
     if (!Array.isArray(chat) || chat.some(message =>
-        typeof message?.content === 'string' && message.content.includes(AUTONOMOUS_MEMORY_MARKER))) return;
+        ['system', 'developer'].includes(message?.role)
+        && typeof message.content === 'string'
+        && message.content.includes(AUTONOMOUS_MEMORY_MARKER))) return;
     const systemMessage = chat.find(message => message?.role === 'system' && typeof message.content === 'string');
     if (systemMessage) systemMessage.content += '\n\n' + AUTONOMOUS_MEMORY_INSTRUCTIONS;
     else chat.unshift({ role: 'system', content: AUTONOMOUS_MEMORY_INSTRUCTIONS });
