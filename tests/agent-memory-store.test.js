@@ -764,6 +764,67 @@ describe('MemoryStore', () => {
         expect(rows[0].metadata.characterId).toBe('julia.png');
     });
 
+    test('deletes all chat-owned harness data and invalidates an in-flight reflection claim', async () => {
+        const store = await createMemoryStore();
+        const scopeId = 'character-chat-deleted';
+        const captured = store.captureTurn({
+            scopeId,
+            role: 'user',
+            content: 'This transcript belongs to the chat being deleted.',
+            captureKey: 'delete-chat-turn',
+            metadata: { characterId: 'char-a.png' },
+        });
+        store.proposeMemory({
+            scope: 'chat',
+            scopeId,
+            kind: 'preference',
+            content: 'This preference belongs only to the deleted chat.',
+            metadata: { origin: 'manual' },
+            requireApproval: false,
+        });
+        store.proposeMemory({
+            scope: 'character',
+            scopeId: 'char-a.png',
+            kind: 'preference',
+            content: 'This character preference is independent of that chat.',
+            metadata: { origin: 'manual' },
+            requireApproval: false,
+        });
+        store.enqueueReflectionJob({
+            scopeId,
+            chatId: 'deleted-chat',
+            characterId: 'char-a.png',
+            mode: 'extract',
+            triggerEventId: captured.event.id,
+            triggerCount: 1,
+            createdAt: 1000,
+        });
+        const claimed = store.claimReflectionJob({
+            scopeId,
+            characterId: 'char-a.png',
+            claimToken: 'delete-in-flight',
+            now: 2000,
+        });
+        expect(claimed).not.toBeNull();
+        expect(store.ownsReflectionJob(claimed.id, 'delete-in-flight', 2001)).toBe(true);
+
+        expect(store.deleteChatPartition(scopeId)).toEqual({
+            clearedTurns: 1,
+            deletedMemories: 1,
+            deletedProposals: 1,
+            cancelledJobs: 1,
+        });
+
+        expect(store.ownsReflectionJob(claimed.id, 'delete-in-flight', 2002)).toBe(false);
+        expect(store.listReflectionJobs()).toHaveLength(0);
+        expect(store.countCapturedTurns(scopeId)).toBe(0);
+        expect(store.listMemories({ scope: 'chat', scopeId })).toHaveLength(0);
+        expect(store.listProposals({ status: 'approved' }).filter(item => item.scope === 'chat' && item.scopeId === scopeId))
+            .toHaveLength(0);
+        expect(store.listMemories({ scope: 'character', scopeId: 'char-a.png' }).map(item => item.content))
+            .toEqual(['This character preference is independent of that chat.']);
+    });
+
     test('persists and claims autonomous reflection jobs only within the active character', async () => {
         const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-reflection-jobs-'));
         const databasePath = path.join(folder, 'memory.sqlite');
