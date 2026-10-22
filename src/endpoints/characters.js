@@ -1430,7 +1430,7 @@ router.post('/delete', validateAvatarUrlMiddleware, async function (request, res
     }
 
     const characterId = request.body.avatar_url;
-    const dir_name = characterId.replace(/\\.png$/iu, '');
+    const dir_name = characterId.replace(/\.png$/iu, '');
     if (!dir_name.length || dir_name === '.' || dir_name === '..') {
         console.error('Malicious dirname prevented');
         return response.sendStatus(403);
