@@ -150,7 +150,7 @@ export class DreamingEngine {
                 content,
             })) continue;
 
-            proposals.push(this.#store.proposeMemory({
+            const proposal = this.#store.proposeMemory({
                 scope: target.scope,
                 scopeId: target.scopeId,
                 kind: 'event',
@@ -168,7 +168,10 @@ export class DreamingEngine {
                     targetScope: target.scope,
                     characterId: activeCharacterId,
                 },
-            }));
+            });
+            if (!proposal.staleEvidence && !proposal.forgotten && !proposal.forgottenEvidence) {
+                proposals.push(proposal);
+            }
         }
 
         this.#store.recordEvent({
