@@ -282,7 +282,9 @@ export class RoleplayStateStore {
         if (typeof location === 'string' && location.trim()) patch.location = location.trim();
         if (typeof time === 'string' && time.trim()) patch.time = time.trim();
         if (Array.isArray(participants)) patch.participants = participants;
-        if (Array.isArray(resolvedThreads) && resolvedThreads.length) patch.lastResolvedThreads = resolvedThreads;
+        // This field describes the latest transition, not cumulative history.
+        // Clear it on a later advance when no threads were explicitly resolved.
+        patch.lastResolvedThreads = Array.isArray(resolvedThreads) ? resolvedThreads : [];
 
         return this.updateState({
             stateType: 'scene',
