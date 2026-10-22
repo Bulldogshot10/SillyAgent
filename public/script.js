@@ -5638,7 +5638,7 @@ async function executeHarnessToolCall(toolCall, { reasoningText = null, signal =
         const message = await ToolManager.formatToolCallMessage(name, parameters);
         toast = message ? toastr.info(message, 'Tool Calling', { timeOut: 0 }) : null;
 
-        if (typeof name === 'string' && name.startsWith('sillyagent_')) {
+        if (ToolManager.isServerTool(name)) {
             let parsedArguments = parameters;
             if (typeof parsedArguments === 'string') {
                 parsedArguments = parsedArguments.trim() ? JSON.parse(parsedArguments) : {};
