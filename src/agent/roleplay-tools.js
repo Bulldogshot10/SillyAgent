@@ -187,12 +187,12 @@ async function searchActiveLore({ query, limit = 5 }, context = {}) {
     };
 }
 
-function registerStateReader(registry, { name, description, stateType, characterScoped = false }) {
+function registerStateReader(registry, { name, description, stateType, characterScoped = false, toolset = null }) {
     if (registry.hasTool(name)) return;
     registry.registerTool({
         name,
         description,
-        toolset: characterScoped ? 'character' : 'world',
+        toolset: toolset ?? (characterScoped ? 'character' : 'world'),
         permission: 'read',
         timeoutMs: 2000,
         inputSchema: STATE_READ_SCHEMA,
@@ -241,6 +241,12 @@ export function registerRoleplayTools(registry = toolRegistry) {
         name: 'world_get_state',
         description: 'Read the authoritative current world state for the active chat. Use before major scene changes to avoid continuity errors. Returns state plus a version number for safe updates.',
         stateType: 'world',
+    });
+    registerStateReader(registry, {
+        name: 'scene_get_state',
+        description: 'Read the current scene number, recap, location, time, participants, and unresolved threads for the active chat. Use before advancing a scene or resuming after a time skip.',
+        stateType: 'scene',
+        toolset: 'scene',
     });
     registerStateWriter(registry, {
         name: 'world_update_state',
