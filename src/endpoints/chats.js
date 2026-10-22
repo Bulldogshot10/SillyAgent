@@ -673,7 +673,7 @@ router.post('/delete', validateAvatarUrlMiddleware, async function (request, res
         // chat. If storage cleanup fails, preserve the chat file rather than leave
         // captured transcript data orphaned in the harness database.
         try {
-            const chatId = chatFileName.replace(/\\.jsonl$/iu, '');
+            const chatId = chatFileName.replace(/\.jsonl$/iu, '');
             await deleteAgentChatPartitionIfPresent(request.user.directories, chatId, request.body.avatar_url);
         } catch (error) {
             console.error('[SillyAgent chat cleanup]', error);
