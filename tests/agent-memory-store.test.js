@@ -764,6 +764,38 @@ describe('MemoryStore', () => {
         expect(rows[0].metadata.characterId).toBe('julia.png');
     });
 
+    test('rejects late captures after deletion until a chat lifecycle reactivates the partition', async () => {
+        const store = await createMemoryStore();
+        const first = store.captureTurn({
+            scopeId: 'deleted-chat-scope',
+            role: 'user',
+            content: 'A turn before deletion.',
+            captureKey: 'deleted-chat-first',
+        });
+        expect(first.event).not.toBeNull();
+
+        store.deleteChatPartition('deleted-chat-scope');
+        const late = store.captureTurn({
+            scopeId: 'deleted-chat-scope',
+            role: 'assistant',
+            content: 'A stale in-flight response after deletion.',
+            captureKey: 'deleted-chat-late',
+        });
+        expect(late).toEqual({ event: null, duplicate: false, deleted: true });
+        expect(store.countCapturedTurns('deleted-chat-scope')).toBe(0);
+
+        expect(store.activateChatPartition('deleted-chat-scope')).toEqual({ activated: true });
+        const reopened = store.captureTurn({
+            scopeId: 'deleted-chat-scope',
+            role: 'user',
+            content: 'A turn from the newly opened chat.',
+            captureKey: 'deleted-chat-reopened',
+        });
+        expect(reopened.deleted).toBeUndefined();
+        expect(reopened.event.content).toBe('A turn from the newly opened chat.');
+        expect(store.countCapturedTurns('deleted-chat-scope')).toBe(1);
+    });
+
     test('deletes all chat-owned harness data and invalidates an in-flight reflection claim', async () => {
         const store = await createMemoryStore();
         const scopeId = 'character-chat-deleted';
