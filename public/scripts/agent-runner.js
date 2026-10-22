@@ -60,12 +60,12 @@ export class SillyAgentRunner {
                 const withinBudget = !singleStepOnly
                     && rounds < SillyAgentRunner.MAX_TOOL_ROUNDS
                     && toolCallsExecuted < SillyAgentRunner.MAX_TOOL_CALLS;
-                this.#setToolCallsAllowed(withinBudget || singleStepOnly);
+                this.#setToolCallsAllowed(withinBudget);
 
                 const result = await generateStep({
                     ...generationOptions,
                     depth: originalDepth + rounds,
-                }, { allowToolCalls: withinBudget || singleStepOnly, round: rounds });
+                }, { allowToolCalls: withinBudget, round: rounds });
 
                 if (!result || result.__sillyAgentRunner !== true || result.kind !== 'tool_calls') {
                     return result;
