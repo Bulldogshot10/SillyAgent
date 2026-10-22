@@ -6234,6 +6234,7 @@ function setInContextMessages(msgInContextCount, type) {
 /**
  * @typedef {object} AdditionalRequestOptions
  * @property {JsonSchema} [jsonSchema]
+ * @property {boolean} [allowToolCalls] Explicit per-step tool permission supplied by SillyAgentRunner.
  */
 
 /**
