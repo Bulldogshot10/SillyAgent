@@ -8,7 +8,7 @@ const STATUSES = new Set(['pending', 'approved', 'rejected']);
 const MAX_CONTENT = 4000;
 const MAX_EVENT_CONTENT = 12000;
 const MAX_METADATA_BYTES = 8192;
-const CREDENTIAL_PATTERN = /(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|Bearer\\s+[A-Za-z0-9._~+/-]{20,})/u;
+const CREDENTIAL_PATTERN = /(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|Bearer\s+[A-Za-z0-9._~+/-]{20,})/u;
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
