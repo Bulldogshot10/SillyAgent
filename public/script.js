@@ -5657,6 +5657,7 @@ async function executeHarnessToolCall(toolCall, { reasoningText = null } = {}) {
                     activeCharacterId: selected_group ? null : (characters[this_chid]?.avatar || null),
                     activeWorldNames: getSillyAgentActiveWorldNames(),
                 }),
+                signal: abortController?.signal,
             });
             const execution = await executionResponse.json().catch(() => null);
             if (!executionResponse.ok || !execution?.ok) {
@@ -5716,6 +5717,7 @@ export async function Generate(type, options = {}, dryRun = false) {
         saveToolInvocations: invocations => ToolManager.saveFunctionToolInvocations(invocations),
         onToolErrors: errors => ToolManager.showToolCallError(errors),
         onStop: generationType => unblockGeneration(generationType),
+        shouldStop: () => !!abortController?.signal.aborted,
         maxToolRounds,
     });
 
