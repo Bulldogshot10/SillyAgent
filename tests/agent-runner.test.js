@@ -139,6 +139,25 @@ describe('SillyAgentRunner', () => {
         expect(calls.errors).toHaveLength(1);
     });
 
+    test('honors an aborted caller signal even without a shouldStop adapter', async () => {
+        const controller = new AbortController();
+        controller.abort(new Error('cancelled by caller'));
+        const stop = jest.fn();
+        const { runner, calls } = makeRunner({}, { onStop: stop });
+        const generateStep = jest.fn(async () => 'should not generate');
+
+        const result = await runner.run({
+            type: 'normal',
+            signal: controller.signal,
+            generateStep,
+        });
+
+        expect(result).toBeUndefined();
+        expect(generateStep).not.toHaveBeenCalled();
+        expect(calls.executed).toHaveLength(0);
+        expect(stop).toHaveBeenCalledWith('normal');
+    });
+
     test('stops between tool dispatch and the next model round when cancelled', async () => {
         let cancelled = false;
         const stop = jest.fn();
