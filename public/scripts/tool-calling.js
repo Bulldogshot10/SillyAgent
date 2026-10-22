@@ -1,6 +1,6 @@
 import { DOMPurify } from '../lib.js';
 
-import { addOneMessage, characters, chat, event_types, eventSource, getCurrentChatId, getGeneratingApi, getGeneratingModel, getRequestHeaders, main_api, saveChatConditional, system_avatar, systemUserName, this_chid } from '../script.js';
+import { addOneMessage, characters, chat, event_types, eventSource, getCurrentChatId, getGeneratingApi, getGeneratingModel, getRequestHeaders, getSillyAgentActiveWorldNames, main_api, saveChatConditional, system_avatar, systemUserName, this_chid } from '../script.js';
 import { chat_completion_sources, custom_prompt_post_processing_types, getChatCompletionModel, model_list, oai_settings } from './openai.js';
 import { selected_group } from './group-chats.js';
 import { Popup } from './popup.js';
@@ -469,6 +469,7 @@ export class ToolManager {
                             arguments: parameters,
                             activeChatId: getCurrentChatId() || null,
                             activeCharacterId: selected_group ? null : (characters[this_chid]?.avatar || null),
+                            activeWorldNames: getSillyAgentActiveWorldNames(),
                         }),
                     });
                     const execution = await executionResponse.json().catch(() => null);
