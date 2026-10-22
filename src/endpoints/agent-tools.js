@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import express from 'express';
 
-import { getAgentMemoryStore, getAgentRoleplayStateStore, getAgentSkillStore } from '../agent/runtime.js';
+import { getAgentMemoryStore, getAgentRoleplayStateStore, getAgentScopedChatId, getAgentSkillStore } from '../agent/runtime.js';
 import { getReflectionProviderState, saveReflectionProviderConfig } from '../agent/reflection-provider.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
 import { registerSkillTools } from '../agent/skill-tools.js';
@@ -23,17 +23,8 @@ function getSafeContextId(value) {
 }
 
 function getScopedChatId(chatId, characterId) {
-    const safeChatId = getSafeContextId(chatId);
-    if (!safeChatId) return null;
-    const safeCharacterId = getSafeContextId(characterId);
-    if (!safeCharacterId) return safeChatId;
-    // Chat IDs can be filenames and may collide between characters. Hash both
-    // IDs so even chat-scoped memories are isolated by character.
-    return 'character-chat-' + createHash('sha256')
-        .update(safeCharacterId + '\0' + safeChatId)
-        .digest('hex');
+    return getAgentScopedChatId(getSafeContextId(chatId), getSafeContextId(characterId));
 }
-
 function getSafeWorldNames(value) {
     if (!Array.isArray(value)) return [];
     return [...new Set(value.filter(name => typeof name === 'string')
