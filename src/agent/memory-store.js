@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { promises as fsPromises } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 const SCOPES = new Set(['user', 'character', 'chat']);
 const KINDS = new Set(['fact', 'preference', 'event', 'relationship', 'goal', 'world_state']);
@@ -75,6 +75,11 @@ function serializeMetadata(metadata) {
     }
     if (CREDENTIAL_PATTERN.test(serialized)) throw new TypeError('Memory metadata must not contain credential-like secrets.');
     return serialized;
+}
+
+function getMemoryContentHash(content) {
+    const normalized = content.normalize('NFKC').toLowerCase().replace(/\\s+/gu, ' ').trim();
+    return createHash('sha256').update(normalized).digest('hex');
 }
 
 function parseMetadata(value) {
@@ -232,6 +237,12 @@ export class MemoryStore {
             'UNIQUE(scope, scope_id, kind, content));',
         );
         this.#db.exec('CREATE INDEX IF NOT EXISTS memories_scope_updated ON memories(scope, scope_id, updated_at DESC);');
+        this.#db.exec(
+            'CREATE TABLE IF NOT EXISTS memory_forget_tombstones (' +
+            'scope TEXT NOT NULL CHECK (scope IN (\\'user\\',\\'character\\',\\'chat\\')), ' +
+            'scope_id TEXT NOT NULL DEFAULT \\'\\', content_hash TEXT NOT NULL, created_at INTEGER NOT NULL, ' +
+            'PRIMARY KEY(scope, scope_id, content_hash));',
+        );
         this.#db.exec('CREATE TABLE IF NOT EXISTS memory_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
         this.#db.exec(
             'CREATE TABLE IF NOT EXISTS memory_capture_keys (' +
@@ -328,6 +339,7 @@ export class MemoryStore {
         metadata,
         createdAt = Date.now(),
         requireApproval,
+        requireCurrentEvidenceIds = [],
     }) {
         const target = normalizeScope(scope, scopeId);
         const text = normalizeText(content, MAX_CONTENT, 'Memory content');
@@ -337,12 +349,36 @@ export class MemoryStore {
             throw new TypeError('Memory importance must be an integer from 1 through 5.');
         }
         if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Memory timestamp must be a non-negative integer.');
+        if (!Array.isArray(requireCurrentEvidenceIds) || requireCurrentEvidenceIds.length > 12
+            || requireCurrentEvidenceIds.some(id => typeof id !== 'string' || !id || id.length > 256)
+            || new Set(requireCurrentEvidenceIds).size !== requireCurrentEvidenceIds.length) {
+            throw new TypeError('Current evidence must contain up to 12 unique event IDs.');
+        }
         const metadataJson = serializeMetadata(metadata);
         const approvalRequired = requireApproval === undefined ? this.getSettings().requireApproval : requireApproval;
         if (typeof approvalRequired !== 'boolean') throw new TypeError('requireApproval must be a boolean.');
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            if (requireCurrentEvidenceIds.length) {
+                const evidenceRows = this.#db.prepare(
+                    'SELECT id FROM memory_events WHERE event_type IN (?, ?) AND id IN ('
+                    + requireCurrentEvidenceIds.map(() => '?').join(', ') + ')',
+                ).all('chat.user_turn', 'chat.assistant_turn', ...requireCurrentEvidenceIds);
+                if (evidenceRows.length !== requireCurrentEvidenceIds.length) {
+                    this.#db.exec('ROLLBACK;');
+                    return { memory: null, duplicate: false, forgotten: false, staleEvidence: true, requiresReview: approvalRequired };
+                }
+            }
+            if (metadata?.origin === 'background_reflection') {
+                const forgotten = this.#db.prepare(
+                    'SELECT 1 FROM memory_forget_tombstones WHERE scope = ? AND scope_id = ? AND content_hash = ? LIMIT 1',
+                ).get(target.scope, target.scopeId, getMemoryContentHash(text));
+                if (forgotten) {
+                    this.#db.exec('COMMIT;');
+                    return { memory: null, duplicate: false, forgotten: true, staleEvidence: false, requiresReview: approvalRequired };
+                }
+            }
             const duplicate = this.#db.prepare(
                 'SELECT * FROM memory_proposals WHERE status = \'pending\' AND scope = ? AND scope_id = ? AND kind = ? AND content = ? ORDER BY created_at DESC LIMIT 1',
             ).get(target.scope, target.scopeId, kind, text);
@@ -961,6 +997,10 @@ export class MemoryStore {
             const relatedProposals = this.#db.prepare(
                 'SELECT * FROM memory_proposals WHERE scope = ? AND scope_id = ? AND content = ?',
             ).all(row.scope, row.scope_id, row.content);
+            this.#db.prepare(
+                'INSERT INTO memory_forget_tombstones(scope, scope_id, content_hash, created_at) VALUES (?, ?, ?, ?) ' +
+                'ON CONFLICT(scope, scope_id, content_hash) DO UPDATE SET created_at = excluded.created_at',
+            ).run(row.scope, row.scope_id, getMemoryContentHash(row.content), Date.now());
             const relatedEvents = this.#db.prepare(
                 'SELECT id FROM memory_events WHERE scope = ? AND scope_id = ? ' +
                 'AND event_type = ? AND content = ?',
@@ -1263,6 +1303,26 @@ export class MemoryStore {
         sql += ' ORDER BY created_at DESC LIMIT ?';
         params.push(safeLimit);
         return this.#db.prepare(sql).all(...params).reverse().map(toEvent);
+    }
+
+    /**
+     * Revalidate captured-turn evidence after an asynchronous provider call.
+     * Only currently persisted raw turns are returned, in the caller's original order.
+     * @param {string[]} eventIds Candidate evidence IDs.
+     * @returns {object[]} Existing captured-turn events.
+     */
+    listCapturedTurnsByIds(eventIds) {
+        if (!Array.isArray(eventIds) || eventIds.length > 200
+            || eventIds.some(id => typeof id !== 'string' || !id || id.length > 256)) {
+            throw new TypeError('Captured-turn lookup requires up to 200 valid event IDs.');
+        }
+        const ids = [...new Set(eventIds)];
+        if (!ids.length) return [];
+        const rows = this.#db.prepare(
+            'SELECT * FROM memory_events WHERE event_type IN (?, ?) AND id IN (' + ids.map(() => '?').join(', ') + ')',
+        ).all('chat.user_turn', 'chat.assistant_turn', ...ids).map(toEvent);
+        const byId = new Map(rows.map(event => [event.id, event]));
+        return ids.map(id => byId.get(id)).filter(Boolean);
     }
 
     /**
