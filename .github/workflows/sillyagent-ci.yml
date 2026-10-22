@@ -39,6 +39,9 @@ jobs:
         run: >-
           npx eslint
           src/agent/tool-registry.js
+          src/agent/roleplay-state-store.js
+          src/agent/roleplay-tools.js
+          src/agent/dreaming.js
           src/agent/skill-store.js
           src/agent/skill-tools.js
           src/agent/memory-store.js
@@ -50,12 +53,15 @@ jobs:
           src/middleware/agent-tools-body-limit.js
           src/server-startup.js
           src/server-main.js
+          public/script.js
+          public/scripts/agent-runner.js
+          public/scripts/openai.js
           public/scripts/tool-calling.js
           public/scripts/sillyagent-memory.js
           public/scripts/sillyagent-memory-context.js
 
       - name: Lint test files
-        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js agent-tools-body-limit.test.js agent-skill-store.test.js agent-skill-endpoint.test.js agent-reflection-worker.test.js agent-runtime.test.js
+        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-runner.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js agent-tools-body-limit.test.js agent-skill-store.test.js agent-skill-endpoint.test.js agent-reflection-worker.test.js agent-runtime.test.js agent-roleplay-state-store.test.js agent-roleplay-tools.test.js
         working-directory: tests
 
       - name: Run unit tests
