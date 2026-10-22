@@ -28,6 +28,7 @@ describe('native roleplay harness tools', () => {
             'world_update_state',
             'character_get_state',
             'character_update_state',
+            'scene_get_state',
             'lore_search',
             'dice_roll',
             'scene_advance',
