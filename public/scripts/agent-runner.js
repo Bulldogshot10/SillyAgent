@@ -68,6 +68,8 @@ export class SillyAgentRunner {
         const singleStepOnly = dryRun || ['quiet', 'continue', 'impersonate', 'swipe'].includes(type);
 
         let stopNotified = false;
+        const shouldStop = () => signal?.aborted === true || this.#shouldStop();
+
         const notifyStop = generationType => {
             if (stopNotified) return;
             stopNotified = true;
@@ -76,7 +78,7 @@ export class SillyAgentRunner {
 
         try {
             while (true) {
-                if (this.#shouldStop()) {
+                if (shouldStop()) {
                     notifyStop(rounds === 0 ? type : 'normal');
                     return undefined;
                 }
@@ -94,6 +96,11 @@ export class SillyAgentRunner {
                     round: rounds,
                     toolCallsRemaining: this.#maxToolCalls - toolCallsExecuted,
                 });
+
+                if (shouldStop()) {
+                    notifyStop(stepType);
+                    return undefined;
+                }
 
                 if (!result || result.__sillyAgentRunner !== true || result.kind !== 'tool_calls') {
                     return result;
@@ -118,7 +125,7 @@ export class SillyAgentRunner {
                 const stealthCalls = [];
 
                 for (const toolCall of callsToRun) {
-                    if (this.#shouldStop()) break;
+                    if (shouldStop()) break;
 
                     const toolName = typeof toolCall?.function?.name === 'string'
                         ? toolCall.function.name
@@ -174,7 +181,7 @@ export class SillyAgentRunner {
                     });
                 }
 
-                if (errors.length && !this.#shouldStop()) this.#onToolErrors(errors);
+                if (errors.length && !shouldStop()) this.#onToolErrors(errors);
                 toolCallsExecuted += callsToRun.length;
 
                 if (invocations.length > 0) {
@@ -187,7 +194,7 @@ export class SillyAgentRunner {
                     }
                 }
 
-                if (this.#shouldStop()) {
+                if (shouldStop()) {
                     notifyStop(stepType);
                     return undefined;
                 }
