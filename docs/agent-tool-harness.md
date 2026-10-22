@@ -12,6 +12,8 @@ SillyAgent is wired into SillyTavern's core and owns the model/tool loop. It doe
 
 This separates the agent controller from provider transport. We intentionally reuse SillyTavern's vendor-specific request/response adapters rather than duplicating every upstream API's authentication, streaming, reasoning-signature, and tool-call wire format.
 
+The native harness has its own `sillyagent_harness_enabled` setting. It does not depend on SillyTavern's legacy `function_calling` toggle or `tool_call_recurse_limit`; per-turn budgets are enforced by `SillyAgentRunner`. The selected provider/model must still implement the function-call protocol. When a request advertises tools, the server converts incompatible legacy prompt post-processing presets to tool-preserving equivalents and preserves assistant tool-call / tool-result pairing across rounds.
+
 ## Registered tool surface
 
 | Server tool | Purpose | Access |

@@ -1,7 +1,7 @@
 import { DOMPurify } from '../lib.js';
 
 import { addOneMessage, characters, chat, event_types, eventSource, getCurrentChatId, getGeneratingApi, getGeneratingModel, getRequestHeaders, getSillyAgentActiveWorldNames, main_api, saveChatConditional, system_avatar, systemUserName, this_chid } from '../script.js';
-import { chat_completion_sources, custom_prompt_post_processing_types, getChatCompletionModel, model_list, oai_settings } from './openai.js';
+import { chat_completion_sources, getChatCompletionModel, model_list, oai_settings } from './openai.js';
 import { selected_group } from './group-chats.js';
 import { Popup } from './popup.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
@@ -705,22 +705,29 @@ export class ToolManager {
      */
     static isToolCallingSupported(settings = null, model = null) {
         settings = settings ?? oai_settings;
+        if (settings.sillyagent_harness_enabled === false) {
+            return false;
+        }
+        return ToolManager.isProviderToolCallingSupported(settings, model);
+    }
+
+    /**
+     * Checks provider/model protocol support without inheriting SillyAgent's policy toggle.
+     * @param {ChatCompletionSettings} settings Optional chat completion settings.
+     * @param {string} model Optional model name.
+     * @returns {boolean} Whether the selected provider/model supports native tool calls.
+     */
+    static isProviderToolCallingSupported(settings = null, model = null) {
+        settings = settings ?? oai_settings;
         model = model ?? getChatCompletionModel(settings);
 
-        if (main_api !== 'openai' || !settings.function_calling) {
+        if (main_api !== 'openai') {
             return false;
         }
 
         // GPT-6 Astra supports tool calling only through the Responses API.
         if ([chat_completion_sources.OPENAI, chat_completion_sources.AZURE_OPENAI].includes(settings.chat_completion_source)
             && /^gpt-6-astra/.test(model)) {
-            return false;
-        }
-
-        // Post-processing will forcefully remove past tool calls from the prompt, making them useless
-        const { NONE, MERGE_TOOLS, SEMI_TOOLS, STRICT_TOOLS } = custom_prompt_post_processing_types;
-        const allowedPromptPostProcessing = [NONE, MERGE_TOOLS, SEMI_TOOLS, STRICT_TOOLS];
-        if (!allowedPromptPostProcessing.includes(settings.custom_prompt_post_processing)) {
             return false;
         }
 

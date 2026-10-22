@@ -2001,32 +2001,17 @@
                                         </div>
                                     </div>
                                     <div class="range-block" data-source="openai,cohere,mistralai,custom,claude,aimlapi,openrouter,groq,siliconflow,minimax,deepseek,makersuite,vertexai,ai21,xai,pollinations,moonshot,fireworks,cometapi,electronhub,chutes,azure_openai,zai,nanogpt,workers_ai">
-                                        <label for="openai_function_calling" class="checkbox_label flexWrap widthFreeExpand">
-                                            <input id="openai_function_calling" type="checkbox" />
-                                            <span data-i18n="Enable function calling">Enable function calling</span>
+                                        <label for="sillyagent_harness_enabled" class="checkbox_label flexWrap widthFreeExpand">
+                                            <input id="sillyagent_harness_enabled" type="checkbox" />
+                                            <span data-i18n="Enable native SillyAgent tool harness">Enable native SillyAgent tool harness</span>
                                             <div id="openai_function_calling_supported" data-cc-toggle="false">
-                                                <i class="icon-supported fa-solid fa-circle-check" title="Supported by the current model" data-i18n="[title]Supported by the current model"></i>
-                                                <i class="icon-unsupported fa-solid fa-circle-exclamation" title="Unsupported by the current model" data-i18n="[title]Unsupported by the current model"></i>
+                                                <i class="icon-supported fa-solid fa-circle-check" title="Supported by the current provider/model" data-i18n="[title]Supported by the current provider/model"></i>
+                                                <i class="icon-unsupported fa-solid fa-circle-exclamation" title="Native tool calls are not available for this provider/model" data-i18n="[title]Native tool calls are not available for this provider/model"></i>
                                             </div>
                                         </label>
                                         <div class="flexBasis100p toggle-description justifyLeft">
-                                            <span data-i18n="enable_functions_desc_1">Allows using </span><a href="https://platform.openai.com/docs/guides/function-calling" target="_blank" data-i18n="enable_functions_desc_2">function tools</a>.
-                                            <span data-i18n="enable_functions_desc_3">Can be utilized by various extensions to provide additional functionality.</span>
-                                            <strong data-i18n="enable_functions_desc_4">Not supported when Prompt Post-Processing with "no tools" is used!</strong>
-                                        </div>
-                                        <div id="tool_call_recurse_limit_block" class="range-block wide100p">
-                                            <div class="range-block-title">
-                                                <small data-i18n="Agent Tool Rounds Per Turn">Agent Tool Rounds Per Turn</small>
-                                                <div class="fa-solid fa-circle-info opacity50p margin5" data-i18n="[title]Maximum number of agent tool rounds before a final tool-free response." title="Maximum number of agent tool rounds before a final tool-free response."></div>
-                                            </div>
-                                            <div class="range-block-range-and-counter">
-                                                <div class="range-block-range">
-                                                    <input type="range" id="tool_call_recurse_limit" name="tool_call_recurse_limit" min="1" max="8" step="1">
-                                                </div>
-                                                <div class="range-block-counter">
-                                                    <input type="number" min="1" max="8" step="1" data-for="tool_call_recurse_limit" id="tool_call_recurse_limit_counter">
-                                                </div>
-                                            </div>
+                                            <span>Enables the fork's native agent controller. SillyAgent owns tool execution, continuation, cancellation, and the per-turn budget.</span>
+                                            <strong>Function-call protocol support is still required from the selected provider/model. Prompt post-processing is adapted to preserve tool results while tools are active.</strong>
                                         </div>
                                     </div>
                                     <div class="range-block" data-source="openrouter,custom">

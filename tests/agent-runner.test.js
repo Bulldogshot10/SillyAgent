@@ -266,4 +266,53 @@ describe('SillyAgentRunner', () => {
         expect(calls.executed).toHaveLength(0);
         expect(policies).toEqual([false]);
     });
+
+    test('unlocks generation UI when a provider round throws before returning a handoff', async () => {
+        const stop = jest.fn();
+        const { runner } = makeRunner({}, { onStop: stop });
+
+        await expect(runner.run({
+            type: 'normal',
+            generateStep: async () => {
+                throw new Error('provider preprocessing failed');
+            },
+        })).rejects.toThrow('provider preprocessing failed');
+
+        expect(stop).toHaveBeenCalledTimes(1);
+        expect(stop).toHaveBeenCalledWith('normal');
+    });
+
+    test('stops dispatching a model batch after a stealth tool terminates the turn', async () => {
+        const { runner, calls } = makeRunner({
+            execution: async toolCall => toolCall.id === 'stealth'
+                ? { stealth: true }
+                : {
+                    invocation: {
+                        id: toolCall.id,
+                        name: toolCall.function.name,
+                        parameters: '{}',
+                        result: 'should not run',
+                        error: false,
+                    },
+                },
+        });
+        let modelRounds = 0;
+
+        const result = await runner.run({
+            type: 'normal',
+            generateStep: async () => {
+                modelRounds += 1;
+                return {
+                    __sillyAgentRunner: true,
+                    kind: 'tool_calls',
+                    responseData: [toolCall('stealth'), toolCall('must-not-run')],
+                };
+            },
+        });
+
+        expect(result).toBeUndefined();
+        expect(modelRounds).toBe(1);
+        expect(calls.executed).toHaveLength(1);
+        expect(calls.executed[0].toolCall.id).toBe('stealth');
+    });
 });

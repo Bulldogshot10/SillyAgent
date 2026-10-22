@@ -714,6 +714,41 @@ describe('postProcessPrompt', () => {
         const result = mod.postProcessPrompt(messages, 'claude', names);
         expect(result).toHaveLength(1);
     });
+
+    test('maps no-tools prompt presets to tool-preserving variants when the harness sends tools', () => {
+        expect(mod.getToolCompatiblePromptProcessingType('claude')).toBe('merge_tools');
+        expect(mod.getToolCompatiblePromptProcessingType('merge')).toBe('merge_tools');
+        expect(mod.getToolCompatiblePromptProcessingType('semi')).toBe('semi_tools');
+        expect(mod.getToolCompatiblePromptProcessingType('strict')).toBe('strict_tools');
+        expect(mod.getToolCompatiblePromptProcessingType('single')).toBe('single_tools');
+        expect(mod.getToolCompatiblePromptProcessingType('')).toBe('');
+        expect(mod.getToolCompatiblePromptProcessingType('merge_tools')).toBe('merge_tools');
+    });
+
+    test('SINGLE_TOOLS preserves roles and tool-call pairing instead of collapsing them to user messages', () => {
+        const messages = [
+            { role: 'system', content: 'Use tools when useful.' },
+            { role: 'assistant', content: 'Looking up the canon.', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'lore_search', arguments: '{}' } }] },
+            { role: 'tool', tool_call_id: 'call-1', content: 'Found relevant canon.' },
+            { role: 'assistant', content: 'The scene follows the canon.' },
+        ];
+        const result = mod.postProcessPrompt(messages, 'single_tools', names);
+        expect(result.map(message => message.role)).toEqual(['system', 'assistant', 'tool', 'assistant']);
+        expect(result[1].tool_calls).toHaveLength(1);
+        expect(result[2].tool_call_id).toBe('call-1');
+        expect(result[2].content).toBe('Found relevant canon.');
+    });
+
+    test('does not squash consecutive assistant tool-call records into one call batch', () => {
+        const messages = [
+            { role: 'assistant', content: 'Call one.', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'memory_search', arguments: '{}' } }] },
+            { role: 'assistant', content: 'Call two.', tool_calls: [{ id: 'call-2', type: 'function', function: { name: 'lore_search', arguments: '{}' } }] },
+        ];
+        const result = mod.postProcessPrompt(messages, 'merge_tools', names);
+        expect(result).toHaveLength(2);
+        expect(result[0].tool_calls[0].id).toBe('call-1');
+        expect(result[1].tool_calls[0].id).toBe('call-2');
+    });
 });
 
 

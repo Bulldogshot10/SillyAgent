@@ -389,8 +389,7 @@ export const settingsToUpdate = {
     inline_image_quality: ['#openai_inline_image_quality', 'inline_image_quality', false, false],
     continue_prefill: ['#continue_prefill', 'continue_prefill', true, false],
     continue_postfix: ['#continue_postfix', 'continue_postfix', false, false],
-    function_calling: ['#openai_function_calling', 'function_calling', true, false],
-    tool_call_recurse_limit: ['#tool_call_recurse_limit', 'tool_call_recurse_limit', false, false],
+    sillyagent_harness_enabled: ['#sillyagent_harness_enabled', 'sillyagent_harness_enabled', true, false],
     show_thoughts: ['#openai_show_thoughts', 'show_thoughts', true, false],
     reasoning_effort: ['#openai_reasoning_effort', 'reasoning_effort', false, false],
     verbosity: ['#openai_verbosity', 'verbosity', false, false],
@@ -499,8 +498,7 @@ const default_settings = {
     inline_image_quality: 'auto',
     bypass_status_check: false,
     continue_prefill: false,
-    function_calling: false,
-    tool_call_recurse_limit: 8,
+    sillyagent_harness_enabled: true,
     names_behavior: character_names_behavior.DEFAULT,
     continue_postfix: continue_postfix_types.SPACE,
     custom_prompt_post_processing: custom_prompt_post_processing_types.NONE,
@@ -6748,7 +6746,7 @@ function updateVertexAIServiceAccountStatus(isValid = false, message = '') {
 
 function updateFeatureSupportFlags() {
     const featureFlags = {
-        openai_function_calling_supported: ToolManager.isToolCallingSupported(),
+        openai_function_calling_supported: ToolManager.isProviderToolCallingSupported(),
         openai_image_inlining_supported: isImageInliningSupported(),
         openai_video_inlining_supported: isVideoInliningSupported(),
         openai_audio_inlining_supported: isAudioInliningSupported(),
@@ -7056,15 +7054,9 @@ export function initOpenAI() {
         saveSettingsDebounced();
     });
 
-    $('#openai_function_calling').on('input', function () {
-        oai_settings.function_calling = !!$(this).prop('checked');
+    $('#sillyagent_harness_enabled').on('input', function () {
+        oai_settings.sillyagent_harness_enabled = !!$(this).prop('checked');
         updateFeatureSupportFlags();
-        saveSettingsDebounced();
-    });
-
-    $('#tool_call_recurse_limit').on('input', function () {
-        oai_settings.tool_call_recurse_limit = Number($(this).val());
-        $('#tool_call_recurse_limit_counter').val(oai_settings.tool_call_recurse_limit);
         saveSettingsDebounced();
     });
 

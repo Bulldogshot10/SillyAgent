@@ -23,6 +23,7 @@ export const PROMPT_PROCESSING_TYPE = {
     STRICT: 'strict',
     STRICT_TOOLS: 'strict_tools',
     SINGLE: 'single',
+    SINGLE_TOOLS: 'single_tools',
 };
 
 // 'auto' is intentionally unmapped
@@ -82,6 +83,29 @@ export function addAssistantPrefix(prompt, tools, property) {
  * @param {PromptNames} names Prompt names
  * @returns
  */
+/**
+ * Select a tool-preserving equivalent of the configured prompt post-processor.
+ * A normal single-role transcript cannot encode an assistant tool call and its
+ * tool_call_id result, so active tool rounds retain protocol roles instead.
+ * @param {string} type Configured prompt post-processing type.
+ * @returns {string} Tool-compatible post-processing type.
+ */
+export function getToolCompatiblePromptProcessingType(type) {
+    switch (type) {
+        case PROMPT_PROCESSING_TYPE.CLAUDE:
+        case PROMPT_PROCESSING_TYPE.MERGE:
+            return PROMPT_PROCESSING_TYPE.MERGE_TOOLS;
+        case PROMPT_PROCESSING_TYPE.SEMI:
+            return PROMPT_PROCESSING_TYPE.SEMI_TOOLS;
+        case PROMPT_PROCESSING_TYPE.STRICT:
+            return PROMPT_PROCESSING_TYPE.STRICT_TOOLS;
+        case PROMPT_PROCESSING_TYPE.SINGLE:
+            return PROMPT_PROCESSING_TYPE.SINGLE_TOOLS;
+        default:
+            return type;
+    }
+}
+
 export function postProcessPrompt(messages, type, names) {
     switch (type) {
         case PROMPT_PROCESSING_TYPE.MERGE:
@@ -99,6 +123,10 @@ export function postProcessPrompt(messages, type, names) {
             return mergeMessages(messages, names, { strict: true, placeholders: true, single: false, tools: true });
         case PROMPT_PROCESSING_TYPE.SINGLE:
             return mergeMessages(messages, names, { strict: true, placeholders: false, single: true, tools: false });
+        case PROMPT_PROCESSING_TYPE.SINGLE_TOOLS:
+            // A single-role transcript cannot represent assistant tool calls plus
+            // tool results. Retain strict formatting but preserve protocol roles.
+            return mergeMessages(messages, names, { strict: true, placeholders: false, single: false, tools: true });
         default:
             return messages;
     }
@@ -890,10 +918,20 @@ export function mergeMessages(messages, names, { strict = false, placeholders = 
         }
     });
 
-    // Squash consecutive messages with the same role
+    // Squash plain messages, but never merge separate assistant tool-call records.
+    // The provider expects one assistant tool_calls message paired with its exact
+    // tool_call_id result messages in order to continue a native harness turn.
     messages.forEach((message) => {
-        if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === message.role && message.content && message.role !== 'tool') {
-            mergedMessages[mergedMessages.length - 1].content += '\n\n' + message.content;
+        const previousMessage = mergedMessages[mergedMessages.length - 1];
+        const hasToolProtocol = tools && previousMessage && (
+            Array.isArray(previousMessage.tool_calls)
+            || typeof previousMessage.tool_call_id === 'string'
+            || Array.isArray(message.tool_calls)
+            || typeof message.tool_call_id === 'string'
+        );
+        if (previousMessage && previousMessage.role === message.role && message.content
+            && message.role !== 'tool' && !hasToolProtocol) {
+            previousMessage.content += '\n\n' + message.content;
         } else {
             mergedMessages.push(message);
         }

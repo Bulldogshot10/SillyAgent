@@ -49,6 +49,7 @@ import {
     calculateGoogleBudgetTokens,
     postProcessPrompt,
     PROMPT_PROCESSING_TYPE,
+    getToolCompatiblePromptProcessingType,
     addAssistantPrefix,
     embedOpenRouterMedia,
     addReasoningContentToToolCalls,
@@ -2243,7 +2244,11 @@ router.post('/generate', async function (request, response) {
     try {
         if (!request.body) return response.status(400).send({ error: true });
 
-        const postProcessingType = request.body.custom_prompt_post_processing;
+        const configuredPostProcessingType = request.body.custom_prompt_post_processing;
+        const hasNativeTools = Array.isArray(request.body.tools) && request.body.tools.length > 0;
+        const postProcessingType = hasNativeTools
+            ? getToolCompatiblePromptProcessingType(configuredPostProcessingType)
+            : configuredPostProcessingType;
         if (Array.isArray(request.body.messages) && postProcessingType) {
             console.info('Applying custom prompt post-processing of type', postProcessingType);
             request.body.messages = postProcessPrompt(

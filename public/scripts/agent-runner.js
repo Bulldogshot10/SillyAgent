@@ -67,9 +67,17 @@ export class SillyAgentRunner {
         const originalDepth = Number.isInteger(generationOptions.depth) ? generationOptions.depth : 0;
         const singleStepOnly = dryRun || ['quiet', 'continue', 'impersonate', 'swipe'].includes(type);
 
-        while (true) {
+        let stopNotified = false;
+        const notifyStop = generationType => {
+            if (stopNotified) return;
+            stopNotified = true;
+            this.#onStop(generationType);
+        };
+
+        try {
+            while (true) {
             if (this.#shouldStop()) {
-                this.#onStop(rounds === 0 ? type : 'normal');
+                notifyStop(rounds === 0 ? type : 'normal');
                 return undefined;
             }
 
@@ -92,13 +100,13 @@ export class SillyAgentRunner {
             }
 
             if (!withinBudget) {
-                this.#onStop(stepType);
+                notifyStop(stepType);
                 return undefined;
             }
 
             const modelToolCalls = this.#extractToolCalls(result.responseData);
             if (!Array.isArray(modelToolCalls) || modelToolCalls.length === 0) {
-                this.#onStop(stepType);
+                notifyStop(stepType);
                 return undefined;
             }
 
@@ -145,6 +153,8 @@ export class SillyAgentRunner {
                 if (execution?.error instanceof Error) errors.push(execution.error);
                 if (execution?.stealth) {
                     stealthCalls.push(toolName);
+                    // Stealth actions end the agent turn; do not execute later calls in this batch.
+                    break;
                 }
                 if (execution?.invocation) invocations.push(execution.invocation);
             }
@@ -172,13 +182,13 @@ export class SillyAgentRunner {
                     await this.#saveToolInvocations(invocations);
                 } catch (error) {
                     // A persistence failure must not leave SillyTavern's generation UI locked.
-                    this.#onStop(stepType);
+                    notifyStop(stepType);
                     throw error;
                 }
             }
 
             if (this.#shouldStop()) {
-                this.#onStop(stepType);
+                notifyStop(stepType);
                 return undefined;
             }
 
@@ -186,11 +196,20 @@ export class SillyAgentRunner {
             // ordinary results from the same batch before stopping. An empty
             // dispatch cannot be allowed to create an infinite model loop.
             if (stealthCalls.length || invocations.length === 0) {
-                this.#onStop(stepType);
+                notifyStop(stepType);
                 return undefined;
             }
 
             rounds += 1;
+            }
+        } catch (error) {
+            // A provider adapter may throw before its own generation cleanup runs.
+            try {
+                notifyStop(rounds === 0 ? type : 'normal');
+            } catch {
+                // Preserve the original provider/dispatch failure.
+            }
+            throw error;
         }
     }
 }
