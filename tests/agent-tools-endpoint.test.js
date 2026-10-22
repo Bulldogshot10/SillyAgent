@@ -131,6 +131,37 @@ describe('agent tools API', () => {
         expect((await sceneRead.json()).result.state.location).toBe('Station');
     });
 
+    test('scopes world state by the active lorebook set across chats', async () => {
+        const sharedWorld = ['North Kingdom', 'Royal Archive'];
+        const write = await postJson(baseUrl + '/execute', {
+            activeCharacterId: 'character-a.png',
+            activeChatId: 'chat-one',
+            activeWorldNames: sharedWorld,
+            name: 'world_update_state',
+            arguments: { patch: { capital: 'Veyr' }, expectedVersion: 0 },
+        });
+        expect(write.status).toBe(200);
+        expect((await write.json()).result.state.capital).toBe('Veyr');
+
+        const sameWorldOtherChat = await postJson(baseUrl + '/execute', {
+            activeCharacterId: 'character-b.png',
+            activeChatId: 'chat-two',
+            activeWorldNames: ['Royal Archive', 'North Kingdom'],
+            name: 'world_get_state',
+            arguments: {},
+        });
+        expect((await sameWorldOtherChat.json()).result.state.capital).toBe('Veyr');
+
+        const differentWorld = await postJson(baseUrl + '/execute', {
+            activeCharacterId: 'character-a.png',
+            activeChatId: 'chat-three',
+            activeWorldNames: ['South Isles'],
+            name: 'world_get_state',
+            arguments: {},
+        });
+        expect((await differentWorld.json()).result.state).toEqual({});
+    });
+
     test('defaults memory capture and dreaming to autonomous mode', async () => {
         const settingsResponse = await fetch(baseUrl + '/memory/settings');
         const settings = await settingsResponse.json();
