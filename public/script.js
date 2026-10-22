@@ -5613,7 +5613,7 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
         throw exception;
     }
 }
- //MARK: Generate() ends
+//MARK: Generate() ends
 
 /**
  * Owns the logical assistant-turn tool loop. generateStep performs exactly one
