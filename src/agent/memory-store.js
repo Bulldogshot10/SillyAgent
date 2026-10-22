@@ -331,6 +331,31 @@ export class MemoryStore {
         return toMemory(memoryRow);
     }
 
+    #recordForgetTombstones({ scope, scopeId, content, metadataRows = [] }) {
+        const createdAt = Date.now();
+        this.#db.prepare(
+            'INSERT INTO memory_forget_tombstones(scope, scope_id, content_hash, created_at) VALUES (?, ?, ?, ?) ' +
+            'ON CONFLICT(scope, scope_id, content_hash) DO UPDATE SET created_at = excluded.created_at',
+        ).run(scope, scopeId, getMemoryContentHash(content), createdAt);
+
+        const evidenceIds = new Set();
+        for (const record of metadataRows) {
+            const evidence = parseMetadata(record.metadata_json).evidenceEventIds;
+            if (!Array.isArray(evidence)) continue;
+            for (const eventId of evidence) {
+                if (typeof eventId === 'string' && eventId.length > 0 && eventId.length <= 256) {
+                    evidenceIds.add(eventId);
+                }
+            }
+        }
+        for (const eventId of evidenceIds) {
+            this.#db.prepare(
+                'INSERT INTO memory_forget_evidence(scope, scope_id, event_id, created_at) VALUES (?, ?, ?, ?) ' +
+                'ON CONFLICT(scope, scope_id, event_id) DO UPDATE SET created_at = excluded.created_at',
+            ).run(scope, scopeId, eventId, createdAt);
+        }
+    }
+
     /**
      * Persist a memory candidate. Default mode accepts it immediately; review mode stages it as pending.
      * @param {object} input Candidate fields.
@@ -514,6 +539,14 @@ export class MemoryStore {
             let memory = null;
             if (decision === 'approve') {
                 memory = this.#storeAcceptedMemory(proposalRow, reviewedAt);
+            } else {
+                // An explicit rejection should remain authoritative across later reflection jobs.
+                this.#recordForgetTombstones({
+                    scope: proposalRow.scope,
+                    scopeId: proposalRow.scope_id,
+                    content: proposalRow.content,
+                    metadataRows: [proposalRow],
+                });
             }
 
             const status = decision === 'approve' ? 'approved' : 'rejected';
@@ -1021,31 +1054,16 @@ export class MemoryStore {
             const relatedProposals = this.#db.prepare(
                 'SELECT * FROM memory_proposals WHERE scope = ? AND scope_id = ? AND content = ?',
             ).all(row.scope, row.scope_id, row.content);
-            this.#db.prepare(
-                'INSERT INTO memory_forget_tombstones(scope, scope_id, content_hash, created_at) VALUES (?, ?, ?, ?) ' +
-                'ON CONFLICT(scope, scope_id, content_hash) DO UPDATE SET created_at = excluded.created_at',
-            ).run(row.scope, row.scope_id, getMemoryContentHash(row.content), Date.now());
+            this.#recordForgetTombstones({
+                scope: row.scope,
+                scopeId: row.scope_id,
+                content: row.content,
+                metadataRows: [...relatedMemories, ...relatedProposals],
+            });
             const relatedEvents = this.#db.prepare(
                 'SELECT id FROM memory_events WHERE scope = ? AND scope_id = ? ' +
                 'AND event_type = ? AND content = ?',
             ).all(row.scope, row.scope_id, 'memory.proposal_created', row.content);
-
-            const forgottenEvidenceIds = new Set();
-            for (const record of [...relatedMemories, ...relatedProposals]) {
-                const evidenceIds = parseMetadata(record.metadata_json).evidenceEventIds;
-                if (!Array.isArray(evidenceIds)) continue;
-                for (const eventId of evidenceIds) {
-                    if (typeof eventId === 'string' && eventId.length > 0 && eventId.length <= 256) {
-                        forgottenEvidenceIds.add(eventId);
-                    }
-                }
-            }
-            for (const eventId of forgottenEvidenceIds) {
-                this.#db.prepare(
-                    'INSERT INTO memory_forget_evidence(scope, scope_id, event_id, created_at) VALUES (?, ?, ?, ?) ' +
-                    'ON CONFLICT(scope, scope_id, event_id) DO UPDATE SET created_at = excluded.created_at',
-                ).run(row.scope, row.scope_id, eventId, Date.now());
-            }
 
             const sourceEventIds = new Set([
                 ...relatedMemories.map(memory => memory.source_event_id),
