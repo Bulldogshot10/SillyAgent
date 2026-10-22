@@ -102,13 +102,38 @@ export class SillyAgentRunner {
             const stealthCalls = [];
 
             for (const toolCall of callsToRun) {
-                const execution = await this.#executeToolCall(toolCall, {
-                    reasoningText: result.reasoningText ?? null,
-                });
+                const toolName = typeof toolCall?.function?.name === 'string'
+                    ? toolCall.function.name
+                    : 'unknown_tool';
+                const parameters = toolCall?.function?.arguments ?? {};
+                let execution;
+
+                try {
+                    if (toolName === 'unknown_tool') {
+                        throw new Error('The provider returned a malformed tool call without a function name.');
+                    }
+                    execution = await this.#executeToolCall(toolCall, {
+                        reasoningText: result.reasoningText ?? null,
+                    });
+                } catch (caught) {
+                    const error = caught instanceof Error ? caught : new Error('Tool execution failed.');
+                    errors.push(error);
+                    invocations.push({
+                        id: typeof toolCall?.id === 'string' ? toolCall.id : 'agent-tool-error-' + (toolCallsExecuted + callsToRun.indexOf(toolCall)),
+                        displayName: toolName,
+                        name: toolName,
+                        parameters: typeof parameters === 'string' ? parameters : JSON.stringify(parameters) ?? '{}',
+                        result: error.toString(),
+                        error: true,
+                        signature: toolCall?.signature || null,
+                        reasoning: result.reasoningText ?? null,
+                    });
+                    continue;
+                }
 
                 if (execution?.error instanceof Error) errors.push(execution.error);
                 if (execution?.stealth) {
-                    stealthCalls.push(toolCall?.function?.name ?? 'unknown');
+                    stealthCalls.push(toolName);
                 }
                 if (execution?.invocation) invocations.push(execution.invocation);
             }
@@ -132,7 +157,13 @@ export class SillyAgentRunner {
             toolCallsExecuted += callsToRun.length;
 
             if (invocations.length > 0) {
-                await this.#saveToolInvocations(invocations);
+                try {
+                    await this.#saveToolInvocations(invocations);
+                } catch (error) {
+                    // A persistence failure must not leave SillyTavern's generation UI locked.
+                    this.#onStop(stepType);
+                    throw error;
+                }
             }
 
             // Stealth tools deliberately terminate their turn. Persist any
