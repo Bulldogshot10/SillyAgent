@@ -990,6 +990,7 @@ export class MemoryStore {
                 deletedEvents,
                 cancelledJobs,
                 purgedChatPartitions: chatScopes.length,
+                purgedChatScopeIds: chatScopes,
             };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
