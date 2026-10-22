@@ -392,6 +392,17 @@ export class ToolManager {
     }
 
     /**
+     * Whether a name currently resolves to a server-owned SillyAgent tool.
+     * Use registry ownership rather than a string prefix when dispatching calls,
+     * because user tools may already occupy a reserved-looking name.
+     * @param {string} name Registered tool name.
+     * @returns {boolean} Whether the name belongs to a registered server tool.
+     */
+    static isServerTool(name) {
+        return this.#serverTools.has(name);
+    }
+
+    /**
      * Refresh built-in tools exposed by the SillyAgent server.
      * Server-side handlers remain on the server; the browser only receives schemas and calls the execution endpoint.
      * @returns {Promise<void>}
@@ -421,7 +432,7 @@ export class ToolManager {
             const definition = candidate?.function;
             if (candidate?.type !== 'function'
                 || typeof definition?.name !== 'string'
-                || !/^[a-zA-Z0-9_-]{1,64}$/.test(definition.name)
+                || !/^[a-z][a-z0-9_.-]{1,63}$/.test(definition.name)
                 || typeof definition.description !== 'string'
                 || !definition.parameters
                 || typeof definition.parameters !== 'object'
