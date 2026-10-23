@@ -12,6 +12,7 @@ import { enumTypes, SlashCommandEnumValue } from './slash-commands/SlashCommandE
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHelper.js';
 import { isTrueBoolean } from './utils.js';
+import { selectOpenAIChoice } from './util/openai-tool-calls.js';
 
 /**
  * @typedef {object} ToolInvocation
@@ -855,7 +856,7 @@ export class ToolManager {
         // Parsed tool calls from non-streaming data
         if (Array.isArray(data?.choices)) {
             // Find a choice with 0-index
-            const choice = data.choices.find(choice => choice.index === 0);
+            const choice = selectOpenAIChoice(data);
 
             if (choice && typeof choice.message === 'object' && Array.isArray(choice.message.tool_calls)) {
                 // Add OpenRouter signatures
