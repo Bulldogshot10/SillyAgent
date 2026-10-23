@@ -3,7 +3,15 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { getAgentSkillStore } from '../src/agent/runtime.js';
+import {
+    beginAgentChatDeletion,
+    beginAgentCharacterDeletion,
+    endAgentChatDeletion,
+    endAgentCharacterDeletion,
+    getAgentSkillStore,
+    isAgentChatDeletionInProgress,
+    isAgentCharacterDeletionInProgress,
+} from '../src/agent/runtime.js';
 
 let root;
 let juliaSkills;
@@ -16,6 +24,28 @@ afterEach(async () => {
     bellaSkills = null;
     if (root) await fs.rm(root, { recursive: true, force: true });
     root = null;
+});
+
+describe('native agent deletion coordination', () => {
+    test('keeps overlapping deletion locks scoped by root and owner', async () => {
+        root = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-deletion-locks-'));
+        const directories = { root };
+        beginAgentChatDeletion(directories, 'same-chat', 'julia.png');
+        beginAgentChatDeletion(directories, 'same-chat', 'julia.png');
+        expect(isAgentChatDeletionInProgress(directories, 'same-chat', 'julia.png')).toBe(true);
+        expect(isAgentChatDeletionInProgress(directories, 'same-chat', 'bella.png')).toBe(false);
+
+        endAgentChatDeletion(directories, 'same-chat', 'julia.png');
+        expect(isAgentChatDeletionInProgress(directories, 'same-chat', 'julia.png')).toBe(true);
+        endAgentChatDeletion(directories, 'same-chat', 'julia.png');
+        expect(isAgentChatDeletionInProgress(directories, 'same-chat', 'julia.png')).toBe(false);
+
+        beginAgentCharacterDeletion(directories, 'julia.png');
+        expect(isAgentCharacterDeletionInProgress(directories, 'julia.png')).toBe(true);
+        expect(isAgentCharacterDeletionInProgress(directories, 'bella.png')).toBe(false);
+        endAgentCharacterDeletion(directories, 'julia.png');
+        expect(isAgentCharacterDeletionInProgress(directories, 'julia.png')).toBe(false);
+    });
 });
 
 describe('native per-character procedural memory', () => {
