@@ -60,6 +60,7 @@ The startup script installs production dependencies and launches the server. Ope
 
 - [Installation guide](docs/installation.md), including Android Termux.
 - [Architecture and execution flow](docs/sillyagent-architecture.md).
+- [Fork change inventory](docs/fork-changes.md): modification summary and principal changed paths.
 - [Documentation index](docs/README.md).
 
 ## Background reflection setup
