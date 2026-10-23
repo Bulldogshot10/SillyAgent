@@ -299,6 +299,14 @@ export class MemoryStore {
         }
         if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Event timestamp must be a non-negative integer.');
 
+        if (target.scope === 'chat' && this.#db.prepare(
+            'SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1',
+        ).get(target.scopeId)) {
+            const error = new Error('This chat partition was deleted and cannot accept new memory events.');
+            error.code = 'chat_partition_deleted';
+            throw error;
+        }
+
         const id = randomUUID();
         this.#db.prepare(
             'INSERT INTO memory_events (id, scope, scope_id, event_type, content, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -395,6 +403,19 @@ export class MemoryStore {
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            if (target.scope === 'chat' && this.#db.prepare(
+                'SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1',
+            ).get(target.scopeId)) {
+                this.#db.exec('ROLLBACK;');
+                return {
+                    memory: null,
+                    duplicate: false,
+                    forgotten: false,
+                    deleted: true,
+                    staleEvidence: false,
+                    requiresReview: approvalRequired,
+                };
+            }
             if (requireCurrentEvidenceIds.length) {
                 const evidenceRows = this.#db.prepare(
                     'SELECT id, scope_id, json_extract(metadata_json, \'$.characterId\') AS character_id ' +
@@ -1363,6 +1384,12 @@ export class MemoryStore {
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            if (this.#db.prepare(
+                'SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1',
+            ).get(target.scopeId)) {
+                this.#db.exec('COMMIT;');
+                return { job: null, created: false, coalesced: false, deleted: true };
+            }
             const pending = this.#db.prepare(
                 'SELECT * FROM memory_reflection_jobs WHERE scope_id = ? AND character_id = ? AND mode = ? ' +
                 'AND status = \'pending\' ORDER BY created_at ASC LIMIT 1',
