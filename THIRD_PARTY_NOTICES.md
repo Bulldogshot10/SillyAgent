@@ -873,7 +873,7 @@ The 54 paths noted above represent 40 unique package/version combinations. The t
 | `async@3.2.5` | MIT | [upstream/package license](https://github.com/caolan/async/blob/v3.2.5/LICENSE) |
 | `b4a@1.6.6` | Apache-2.0 | [upstream/package license](https://github.com/holepunchto/b4a/blob/v1.6.6/LICENSE) |
 | `bare-events@2.2.2` | Apache-2.0 | [upstream/package license](https://github.com/holepunchto/bare-events/blob/v2.2.2/LICENSE) |
-| `base-64@0.1.0` | MIT | [upstream/package license](https://github.com/mathiasbynens/base64/blob/master/LICENSE-MIT.txt) |
+| `base-64@0.1.0` | MIT | [upstream/package license](https://www.npmjs.com/package/base-64/v/0.1.0) |
 | `busboy@1.6.0` | MIT | [upstream/package license](https://github.com/mscdex/busboy/blob/v1.6.0/LICENSE) |
 | `compress-commons@6.0.2` | MIT | [upstream/package license](https://github.com/archiverjs/node-compress-commons/blob/6.0.2/LICENSE) |
 | `crc-32@1.2.2` | Apache-2.0 | [upstream/package license](https://www.npmjs.com/package/crc-32/v/1.2.2) |
@@ -881,10 +881,10 @@ The 54 paths noted above represent 40 unique package/version combinations. The t
 | `ms@2.1.3` | MIT | [upstream/package license](https://github.com/vercel/ms/blob/2.1.3/license.md) |
 | `cookies@0.9.1` | MIT | [upstream/package license](https://github.com/pillarjs/cookies/blob/0.9.1/LICENSE) |
 | `crc32-stream@6.0.0` | MIT | [upstream/package license](https://github.com/archiverjs/node-crc32-stream/blob/6.0.0/LICENSE) |
-| `dom-walk@0.1.2` | MIT | [upstream/package license](https://www.skypack.dev/view/dom-walk) |
-| `droll@0.2.1` | MIT | [upstream/package license](https://github.com/thebinarypenguin/droll/blob/master/LICENSE) |
+| `dom-walk@0.1.2` | MIT | [upstream/package license](https://www.npmjs.com/package/dom-walk/v/0.1.2) |
+| `droll@0.2.1` | MIT | [upstream/package license](https://www.npmjs.com/package/droll/v/0.2.1) |
 | `events@3.3.0` | MIT | [upstream/package license](https://github.com/browserify/events/blob/v3.3.0/LICENSE) |
-| `exif-parser@0.1.12` | MIT | [upstream/package license](https://github.com/bwindels/exif-parser/blob/master/LICENSE.md) |
+| `exif-parser@0.1.12` | MIT | [upstream/package license](https://www.npmjs.com/package/exif-parser/v/0.1.12) |
 | `fast-fifo@1.3.2` | MIT | [upstream/package license](https://github.com/mafintosh/fast-fifo/blob/v1.3.2/LICENSE) |
 | `foreground-child@3.1.1` | ISC | [upstream/package license](https://www.npmjs.com/package/foreground-child/v/3.1.1) |
 | `graceful-fs@4.2.11` | ISC | [upstream/package license](https://github.com/isaacs/node-graceful-fs/blob/v4.2.11/LICENSE) |
@@ -893,7 +893,7 @@ The 54 paths noted above represent 40 unique package/version combinations. The t
 | `lazystream@1.0.1` | MIT | [upstream/package license](https://github.com/jpommerening/node-lazystream/blob/1.0.1/LICENSE) |
 | `normalize-path@3.0.0` | MIT | [upstream/package license](https://github.com/jonschlinkert/normalize-path/blob/3.0.0/LICENSE) |
 | `queue-tick@1.0.1` | MIT | [upstream/package license](https://github.com/mafintosh/queue-tick/blob/v1.0.1/LICENSE) |
-| `readdir-glob@1.1.3` | Apache-2.0 | [upstream/package license](https://gitea.psi.ch/actions/upload-artifact/src/commit/98d3bf521e08c47b6291934132f5d301e4ff2dd6/.licenses/npm/readdir-glob.dep.yml) |
+| `readdir-glob@1.1.3` | Apache-2.0 | [upstream/package license](https://www.npmjs.com/package/readdir-glob/v/1.1.3) |
 | `streamsearch@1.1.0` | MIT | [upstream/package license](https://github.com/mscdex/streamsearch/blob/v1.1.0/LICENSE) |
 | `streamx@2.16.1` | MIT | [upstream/package license](https://github.com/mafintosh/streamx/blob/v2.16.1/LICENSE) |
 | `tar-stream@3.1.7` | MIT | [upstream/package license](https://github.com/mafintosh/tar-stream/blob/v3.1.7/LICENSE) |
