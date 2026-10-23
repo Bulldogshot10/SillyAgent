@@ -959,6 +959,60 @@ describe('MemoryStore', () => {
         expect(store.countCapturedTurns('bella-chat')).toBe(1);
     });
 
+    test('deleted character tombstones reject late memory, capture, and reflection writes until reactivation', async () => {
+        const store = await createMemoryStore();
+        store.proposeMemory({
+            scope: 'character',
+            scopeId: 'julia.png',
+            kind: 'preference',
+            content: 'A memory removed with the character.',
+            requireApproval: false,
+        });
+
+        store.deleteCharacterPartition('julia.png');
+
+        expect(store.proposeMemory({
+            scope: 'character',
+            scopeId: 'julia.png',
+            kind: 'preference',
+            content: 'A late character memory.',
+            requireApproval: false,
+        })).toMatchObject({ memory: null, duplicate: false, deleted: true, deletedCharacter: true });
+
+        expect(store.captureTurn({
+            scopeId: 'late-julia-chat',
+            role: 'user',
+            content: 'A late turn for the deleted character.',
+            captureKey: 'late-julia-character-turn',
+            metadata: { characterId: 'julia.png' },
+        })).toMatchObject({ event: null, duplicate: false, deleted: true, characterDeleted: true });
+
+        expect(store.enqueueReflectionJob({
+            scopeId: 'late-julia-chat',
+            chatId: 'late-julia-chat',
+            characterId: 'julia.png',
+            mode: 'extract',
+            triggerEventId: 'late-julia-trigger',
+            triggerCount: 1,
+        })).toMatchObject({ job: null, created: false, deleted: true, deletedCharacter: true });
+
+        expect(store.activateCharacterPartition('julia.png')).toEqual({ activated: true });
+        expect(store.proposeMemory({
+            scope: 'character',
+            scopeId: 'julia.png',
+            kind: 'preference',
+            content: 'A memory for the newly created character with this name.',
+            requireApproval: false,
+        }).memory.content).toBe('A memory for the newly created character with this name.');
+        expect(store.captureTurn({
+            scopeId: 'new-julia-chat',
+            role: 'user',
+            content: 'A turn after reopening the character.',
+            captureKey: 'new-julia-character-turn',
+            metadata: { characterId: 'julia.png' },
+        }).event.content).toBe('A turn after reopening the character.');
+    });
+
     test('persists and claims autonomous reflection jobs only within the active character', async () => {
         const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-reflection-jobs-'));
         const databasePath = path.join(folder, 'memory.sqlite');
