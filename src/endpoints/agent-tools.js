@@ -13,7 +13,7 @@ import {
     isAgentChatDeletionInProgress,
     isAgentCharacterDeletionInProgress,
 } from '../agent/runtime.js';
-import { getReflectionProviderState, saveReflectionProviderConfig } from '../agent/reflection-provider.js';
+import { getReflectionProviderState, requestReflectionCompletion, saveReflectionProviderConfig } from '../agent/reflection-provider.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
 import { registerSkillTools } from '../agent/skill-tools.js';
 import { registerRoleplayTools } from '../agent/roleplay-tools.js';
@@ -578,6 +578,49 @@ router.post('/memory/reflection-provider', async (request, response) => {
         return response.status(400).json({
             ok: false,
             error: { code: 'invalid_reflection_provider', message: error?.message || 'Reflection provider settings were invalid.' },
+        });
+    }
+});
+
+router.post('/memory/reflection-provider/test', async (request, response) => {
+    const directories = request.user?.directories;
+    const input = request.body ?? {};
+    try {
+        const model = typeof input.model === 'string' ? input.model.trim() : '';
+        const providerResponse = await requestReflectionCompletion({
+            directories,
+            config: {
+                enabled: true,
+                endpoint: input.endpoint,
+                model: input.model,
+                secretKey: input.secretKey ?? 'none',
+            },
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are testing an OpenAI-compatible chat-completions endpoint. Reply with the exact text SILLYAGENT_REFLECTION_OK.',
+                },
+                {
+                    role: 'user',
+                    content: 'Reply with exactly: SILLYAGENT_REFLECTION_OK',
+                },
+            ],
+        });
+        return response.json({
+            ok: true,
+            model,
+            response: providerResponse.slice(0, 240),
+            matched: providerResponse.includes('SILLYAGENT_REFLECTION_OK'),
+        });
+    } catch (error) {
+        const invalidConfiguration = error instanceof TypeError
+            || /selected SillyTavern secret is not configured/iu.test(error?.message || '');
+        return response.status(invalidConfiguration ? 400 : 502).json({
+            ok: false,
+            error: {
+                code: 'reflection_provider_test_failed',
+                message: error?.message || 'Reflection provider connection test failed.',
+            },
         });
     }
 });
