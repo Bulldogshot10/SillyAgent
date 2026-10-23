@@ -252,16 +252,22 @@ export async function activateAgentCharacterPartitionsIfPresent(input, character
     const skillDatabasePath = path.join(root, 'sillyagent', 'skills', skillPartition + '.sqlite');
 
     const result = {};
+    if (isAgentCharacterDeletionInProgress({ ...directories, root }, normalizedCharacterId)) {
+        return { blocked: true };
+    }
     if (memoryStores.has(memoryDatabasePath) || existsSync(memoryDatabasePath)) {
         const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
+        if (isAgentCharacterDeletionInProgress({ ...directories, root }, normalizedCharacterId)) return { blocked: true, ...result };
         result.memory = store.activateCharacterPartition(normalizedCharacterId);
     }
     if (roleplayStateStores.has(stateDatabasePath) || existsSync(stateDatabasePath)) {
         const store = await getAgentRoleplayStateStore({ ...directories, root });
+        if (isAgentCharacterDeletionInProgress({ ...directories, root }, normalizedCharacterId)) return { blocked: true, ...result };
         result.roleplayState = store.activateCharacterPartition(normalizedCharacterId);
     }
     if (skillStores.has(skillDatabasePath) || existsSync(skillDatabasePath)) {
         const store = await getAgentSkillStore({ ...directories, root }, normalizedCharacterId);
+        if (isAgentCharacterDeletionInProgress({ ...directories, root }, normalizedCharacterId)) return { blocked: true, ...result };
         result.skills = store.activateCharacterPartition();
     }
     return result;
