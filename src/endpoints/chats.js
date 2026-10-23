@@ -10,7 +10,7 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import _ from 'lodash';
 
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
-import { deleteAgentChatPartitionIfPresent } from '../agent/runtime.js';
+import { beginAgentChatDeletion, deleteAgentChatPartitionIfPresent, endAgentChatDeletion } from '../agent/runtime.js';
 import {
     getConfigValue,
     humanizedDateTime,
@@ -669,27 +669,30 @@ router.post('/delete', validateAvatarUrlMiddleware, async function (request, res
             return response.sendStatus(400);
         }
 
-        // Clear the separate native-memory partition before deleting the source
-        // chat. If storage cleanup fails, preserve the chat file rather than leave
-        // captured transcript data orphaned in the harness database.
+        const chatId = chatFileName.replace(/\.jsonl$/iu, '');
+        beginAgentChatDeletion(request.user.directories, chatId, request.body.avatar_url);
         try {
-            const chatId = chatFileName.replace(/\.jsonl$/iu, '');
-            await deleteAgentChatPartitionIfPresent(request.user.directories, chatId, request.body.avatar_url);
-        } catch (error) {
-            console.error('[SillyAgent chat cleanup]', error);
-            return response.status(503).json({
-                error: true,
-                code: 'agent_chat_cleanup_failed',
-                message: 'SillyAgent could not safely clear this chat’s stored data. The chat file was not deleted.',
-            });
-        }
+            // Clear native state while activation requests are blocked. If cleanup fails,
+            // preserve the source chat and release the lock so the user can retry.
+            try {
+                await deleteAgentChatPartitionIfPresent(request.user.directories, chatId, request.body.avatar_url);
+            } catch (error) {
+                console.error('[SillyAgent chat cleanup]', error);
+                return response.status(503).json({
+                    error: true,
+                    code: 'agent_chat_cleanup_failed',
+                    message: 'SillyAgent could not safely clear this chat’s stored data. The chat file was not deleted.',
+                });
+            }
 
-        // Return success if the file was deleted.
-        if (tryDeleteFile(chatFilePath)) {
-            return response.send({ ok: true });
-        } else {
-            console.error('The chat file was not deleted.');
-            return response.sendStatus(400);
+            if (tryDeleteFile(chatFilePath)) {
+                return response.send({ ok: true });
+            } else {
+                console.error('The chat file was not deleted.');
+                return response.sendStatus(400);
+            }
+        } finally {
+            endAgentChatDeletion(request.user.directories, chatId, request.body.avatar_url);
         }
     } catch (error) {
         console.error(error);
@@ -934,23 +937,27 @@ router.post('/group/delete', async (request, response) => {
             return response.sendStatus(400);
         }
 
+        beginAgentChatDeletion(request.user.directories, id);
         try {
-            await deleteAgentChatPartitionIfPresent(request.user.directories, id);
-        } catch (error) {
-            console.error('[SillyAgent group chat cleanup]', error);
-            return response.status(503).json({
-                error: true,
-                code: 'agent_chat_cleanup_failed',
-                message: 'SillyAgent could not safely clear this group chat’s stored data. The chat file was not deleted.',
-            });
-        }
+            try {
+                await deleteAgentChatPartitionIfPresent(request.user.directories, id);
+            } catch (error) {
+                console.error('[SillyAgent group chat cleanup]', error);
+                return response.status(503).json({
+                    error: true,
+                    code: 'agent_chat_cleanup_failed',
+                    message: 'SillyAgent could not safely clear this group chat’s stored data. The chat file was not deleted.',
+                });
+            }
 
-        // Return success if the file was deleted.
-        if (tryDeleteFile(chatFilePath)) {
-            return response.send({ ok: true });
-        } else {
-            console.error('The group chat file was not deleted.');
-            return response.sendStatus(400);
+            if (tryDeleteFile(chatFilePath)) {
+                return response.send({ ok: true });
+            } else {
+                console.error('The group chat file was not deleted.');
+                return response.sendStatus(400);
+            }
+        } finally {
+            endAgentChatDeletion(request.user.directories, id);
         }
     } catch (error) {
         console.error(error);
