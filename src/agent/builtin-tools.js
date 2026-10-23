@@ -161,6 +161,10 @@ export function registerBuiltinTools(registry = toolRegistry) {
                     kind,
                     content: input.content,
                     importance: input.importance ?? 3,
+                    metadata: {
+                        characterId: context.activeCharacterId ?? null,
+                        origin: 'tool',
+                    },
                     requireApproval: context.requireMemoryApproval,
                 });
                 return {
