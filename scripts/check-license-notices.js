@@ -75,12 +75,29 @@ if (missingLicenseEntries.length) {
     failures.push('THIRD_PARTY_NOTICES.md: missing upstream-verified license entry for ' + missingLicenseEntries.join(', '));
 }
 
+const missingLicenseMetadataCount = Object.entries(packageLock.packages ?? {})
+    .filter(([path, pkg]) => path.startsWith('node_modules/') && pkg && typeof pkg === 'object' &&
+        !(typeof pkg.license === 'string' && pkg.license.trim())).length;
+
+const menuStart = indexHtml.indexOf('<div id="options"');
+const legalNoticePosition = indexHtml.indexOf('id="sillyagent-license-notice"', menuStart);
+const firstOptionPosition = indexHtml.indexOf('<a id="option_close_chat"', menuStart);
+if (legalNoticePosition < 0 || firstOptionPosition < 0 || legalNoticePosition > firstOptionPosition) {
+    failures.push('public/index.html: the AGPL/source notice must appear before the first menu option');
+}
+
+const evidenceRows = thirdParty.split('\\n').filter(line =>
+    /^\\| `[^\\`]+@\\S+` \\| (?:MIT|ISC|Apache-2\\.0|BSD-[0-9]-Clause) \\| \\[upstream\\/package license\\]\\(https?:\\/\\//.test(line));
+if (evidenceRows.length < 40) {
+    failures.push('THIRD_PARTY_NOTICES.md: expected evidence links for all 40 unique packages with omitted license metadata');
+}
+
 if (failures.length) {
     console.error('License/source notice check failed:');
     for (const failure of failures) console.error(' - ' + failure);
     process.exitCode = 1;
 } else {
     console.log('License/source notice check passed; validated AGPL-3.0 notices and ' +
-        Object.values(packageLock.packages ?? {}).filter(p => p && typeof p === 'object' && !p.license).length +
+        missingLicenseMetadataCount +
         ' package-lock entries whose license metadata is absent.');
 }
