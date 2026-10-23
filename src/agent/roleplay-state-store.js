@@ -171,6 +171,17 @@ export class RoleplayStateStore {
         }
     }
 
+    #checkpointAfterPurge() {
+        try {
+            const result = this.#db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
+            if (result?.busy) {
+                console.warn('[SillyAgent storage] SQLite roleplay WAL checkpoint remains busy after a privacy purge.');
+            }
+        } catch (error) {
+            console.warn('[SillyAgent storage] SQLite roleplay WAL checkpoint after privacy purge failed:', error?.message || error);
+        }
+    }
+
     #initialize() {
         this.#db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2500; PRAGMA secure_delete = ON; PRAGMA trusted_schema = OFF;');
         this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
@@ -340,6 +351,7 @@ export class RoleplayStateStore {
                 'DELETE FROM roleplay_state WHERE state_type IN (?, ?) AND scope_id = ?',
             ).run('scene', 'world', normalizedScopeId);
             this.#db.exec('COMMIT;');
+            this.#checkpointAfterPurge();
             return { deletedStates, deletedEvents };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
@@ -393,6 +405,7 @@ export class RoleplayStateStore {
                 'DELETE FROM roleplay_state WHERE state_type = ? AND scope_id = ?',
             ).run('character', normalizedCharacterId);
             this.#db.exec('COMMIT;');
+            this.#checkpointAfterPurge();
             return { deletedStates, deletedEvents };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
