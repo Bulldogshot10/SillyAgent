@@ -922,6 +922,14 @@ describe('MemoryStore', () => {
             metadata: { origin: 'manual' },
             requireApproval: false,
         });
+        store.proposeMemory({
+            scope: 'chat',
+            scopeId: 'orphaned-tool-only-chat',
+            kind: 'fact',
+            content: 'A chat memory created by a tool without captured turns.',
+            metadata: { characterId: 'julia.png', origin: 'tool' },
+            requireApproval: false,
+        });
         store.captureTurn({
             scopeId: 'bella-chat',
             role: 'user',
@@ -948,11 +956,13 @@ describe('MemoryStore', () => {
 
         const result = store.deleteCharacterPartition('julia.png');
 
-        expect(result.purgedChatPartitions).toBe(1);
-        expect(result.deletedMemories).toBe(2);
+        expect(result.purgedChatPartitions).toBe(2);
+        expect(result.deletedMemories).toBe(3);
         expect(store.listMemories({ scope: 'character', scopeId: 'julia.png' })).toHaveLength(0);
         expect(store.listMemories({ scope: 'chat', scopeId: 'orphaned-julia-chat' })).toHaveLength(0);
         expect(store.countCapturedTurns('orphaned-julia-chat')).toBe(0);
+        expect(store.listMemories({ scope: 'chat', scopeId: 'orphaned-tool-only-chat' })).toHaveLength(0);
+        expect(store.listProposals({ scope: 'chat', scopeId: 'orphaned-tool-only-chat' })).toHaveLength(0);
         expect(store.listReflectionJobs()).toHaveLength(0);
         expect(store.listMemories({ scope: 'character', scopeId: 'bella.png' }).map(memory => memory.content))
             .toEqual(['Bella-specific preference stays.']);
