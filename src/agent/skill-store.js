@@ -151,6 +151,17 @@ export class SkillStore {
         }
     }
 
+    #checkpointAfterPurge() {
+        try {
+            const result = this.#db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
+            if (result?.busy) {
+                console.warn('[SillyAgent storage] SQLite skill WAL checkpoint remains busy after a privacy purge.');
+            }
+        } catch (error) {
+            console.warn('[SillyAgent storage] SQLite skill WAL checkpoint after privacy purge failed:', error?.message || error);
+        }
+    }
+
     #assertCharacterActive() {
         const row = this.#db.prepare('SELECT deleted FROM skill_store_lifecycle WHERE singleton = 1').get();
         if (row?.deleted === 1) {
@@ -521,6 +532,7 @@ export class SkillStore {
             this.#db.exec('DELETE FROM skill_events; DELETE FROM skill_revisions; DELETE FROM skills; DELETE FROM skill_settings;');
             this.#db.prepare('UPDATE skill_store_lifecycle SET deleted = 1 WHERE singleton = 1').run();
             this.#db.exec('COMMIT;');
+            this.#checkpointAfterPurge();
             return { skills, revisions, events };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
