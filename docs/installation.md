@@ -126,13 +126,31 @@ The `main` branch is under active development and may change frequently. Avoid c
 
 Message capture and the model's tool-calling path do not require a trigger word. Background memory reflection does require a configured provider and must be enabled.
 
-The reflection provider configuration is stored under the active SillyTavern data root at:
+### Configure it in the WebUI
+
+Open the **SillyAgent Agent Core** drawer using the brain icon, then find **Background reflection and self-improvement**.
+
+1. Enter the provider's full OpenAI-compatible chat-completions URL, such as `https://api.openai.com/v1/chat/completions` or a compatible local endpoint.
+2. Enter the exact model ID accepted by that endpoint.
+3. Choose the matching credential slot in **Credential stored in SillyTavern Secrets**. First add and activate that API key in SillyTavern's Secrets manager. The dropdown chooses a secret key identifier; it does not contain the API key itself. Select **No authentication** for endpoints that genuinely do not require a key.
+4. Press **Test connection**. SillyAgent sends one short chat-completions request using the current draft values and displays either the provider's reply or its error. Testing does not save the draft or enable the worker.
+5. Press **Save background worker settings** to persist the configuration. Select **Enable autonomous background reflection** before saving if you want the server worker to process queued jobs.
+
+The provider settings status also reports whether the endpoint/model are configured and whether the selected credential has an active secret. A working connection test alone does not enable reflection: the settings must still be saved with the enable checkbox selected.
+
+Use the endpoint's actual OpenAI-compatible `/chat/completions` path and the model identifier expected by that provider. Non-loopback endpoints must use HTTPS; plain HTTP is accepted only for localhost/loopback services. Do not paste raw API keys into the reflection settings file.
+
+### Configuration file and API
+
+For headless setups, the settings remain stored under the active SillyTavern data root at:
 
 ```text
 sillyagent/reflection-provider.json
 ```
 
-The settings are also exposed through the native endpoint `/api/agent/tools/memory/reflection-provider`. A configuration has this shape:
+The native endpoints are `/api/agent/tools/memory/reflection-provider` (read), `POST /api/agent/tools/memory/reflection-provider` (save), and `POST /api/agent/tools/memory/reflection-provider/test` (test a draft without saving).
+
+A configuration file has this shape:
 
 ```json
 {
@@ -143,9 +161,7 @@ The settings are also exposed through the native endpoint `/api/agent/tools/memo
 }
 ```
 
-Use your provider's actual OpenAI-compatible chat-completions endpoint and model identifier. `secretKey` points to a credential already stored in SillyTavern's secret manager; it is a key identifier, not the secret itself. Do not paste API keys into this JSON file. The default configuration is disabled until configured. HTTPS is required for non-loopback endpoints; plain HTTP is accepted only for localhost/loopback services.
-
-After enabling the provider, the backend reflection worker processes queued jobs automatically. It does not require a chat command or a special trigger phrase. See the [architecture guide](sillyagent-architecture.md) for the full flow.
+`secretKey` points to a credential already stored in SillyTavern's secret manager; it is a key identifier, not the secret itself. The default configuration is disabled until configured. After enabling the provider, the backend reflection worker processes queued jobs automatically. It does not require a chat command or a special trigger phrase. See the [architecture guide](sillyagent-architecture.md) for the full flow.
 
 ## Network and data notes
 
