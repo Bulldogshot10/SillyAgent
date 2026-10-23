@@ -70,7 +70,7 @@ These guards matter because capture and reflection are asynchronous: a request s
 
 The native endpoint is mounted at `/api/agent/tools` within SillyTavern's private API surface. The route has a 16 KiB request-body limit and validates active chat/character context. Tool execution uses allowlisted toolsets and write permissions. Tool calls, schemas, results, timeouts, provider response sizes, and state versions are bounded or validated.
 
-The reflection provider configuration lives in `<SillyTavern data root>/sillyagent/reflection-provider.json`. Provider credentials are referenced through SillyTavern's secret store rather than being saved directly inside this configuration file. Non-loopback reflection endpoints must use HTTPS; plain HTTP is permitted only for loopback services.
+The reflection provider can be configured through the native **SillyAgent Agent Core** WebUI drawer, including a draft **Test connection** action, or via the native provider endpoints. Settings are persisted at `<SillyTavern data root>/sillyagent/reflection-provider.json`. Provider credentials are referenced through SillyTavern's secret store rather than being saved directly inside this configuration file. Testing a draft sends one short OpenAI-compatible chat-completions request and does not save or enable the draft. Non-loopback reflection endpoints must use HTTPS; plain HTTP is permitted only for loopback services.
 
 ## 7. Does it need a trigger word or manual action?
 
