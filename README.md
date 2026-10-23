@@ -52,7 +52,7 @@ The harness has two connected paths: the live generation/tool-call loop and the 
 
 ## Quick start
 
-Requirements: Git and Node.js 20 or newer, including npm.
+Requirements: Git and Node.js 20 or newer, including npm. For the full SillyAgent feature set, use Node.js 22.5 or newer (Node.js 24 is recommended). On Node.js 20, the underlying SillyTavern app can run, but SQLite-backed SillyAgent memory, roleplay state, and the background worker are unavailable.
 
 ```sh
 git clone --single-branch --branch main https://github.com/Bulldogshot10/SillyAgent.git

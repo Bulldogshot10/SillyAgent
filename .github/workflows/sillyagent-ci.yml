@@ -18,9 +18,13 @@ concurrency:
 
 jobs:
   test:
-    name: Unit tests and lint
+    name: Unit tests, lint, and browser smoke test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22.5.0', '24']
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -28,7 +32,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
 
       - name: Check license and source notices
         run: node scripts/check-license-notices.js
@@ -68,8 +72,33 @@ jobs:
           public/scripts/sillyagent-memory-context.js
 
       - name: Lint test files
-        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-runner.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js agent-tools-body-limit.test.js agent-skill-store.test.js agent-skill-endpoint.test.js agent-reflection-worker.test.js agent-runtime.test.js agent-roleplay-state-store.test.js agent-roleplay-tools.test.js openai-tool-calls.test.js
+        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-runner.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js agent-tools-body-limit.test.js agent-skill-store.test.js agent-skill-endpoint.test.js agent-reflection-worker.test.js agent-runtime.test.js agent-roleplay-state-store.test.js agent-roleplay-tools.test.js openai-tool-calls.test.js sample.e2e.js
         working-directory: tests
 
       - name: Run unit tests
         run: npm run test:unit --prefix tests -- --runInBand
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+        working-directory: tests
+
+      - name: Start SillyAgent for browser smoke test
+        shell: bash
+        run: |
+          npm start -- --disableCsrf > /tmp/sillyagent-e2e.log 2>&1 &
+          echo $! > /tmp/sillyagent-e2e.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8000/ >/dev/null; then
+              echo "SillyAgent is responding on 127.0.0.1:8000."
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/sillyagent-e2e.log
+          echo "SillyAgent did not become ready in 120 seconds." >&2
+          exit 1
+
+      - name: Run Playwright browser smoke test
+        run: npm run test:e2e --prefix tests
+        env:
+          ST_BASE_URL: http://127.0.0.1:8000

@@ -5,7 +5,8 @@ SillyAgent is distributed as a modified SillyTavern repository. Clone this repos
 ## Requirements
 
 - Git.
-- Node.js 20 or newer, with npm.
+- Node.js 20 or newer, with npm, to run the underlying SillyTavern application.
+- Node.js 22.5 or newer is required for SillyAgent's persistent memory, roleplay state, and background worker (Node.js 24 is recommended). On Node.js 20, the app can start, but those SQLite-backed agent features remain unavailable.
 - Enough free storage for the application, Node dependencies, chat history, and model/provider caches.
 - An LLM API/provider configured in SillyTavern. Local inference is optional and depends on the provider you use.
 
@@ -31,7 +32,7 @@ If you prefer to manage dependencies manually, run `npm install --no-audit --no-
 
 ## Windows
 
-Install Git and Node.js 20 or newer, then clone the `main` branch:
+Install Git and Node.js 22.5 or newer for the full SillyAgent feature set, then clone the `main` branch:
 
 ```powershell
 git clone --single-branch --branch main https://github.com/Bulldogshot10/SillyAgent.git
@@ -66,7 +67,7 @@ node --version
 npm --version
 ```
 
-The Node.js version must be 20 or newer. If Termux says Node or npm cannot be found, finish package installation and reopen the shell before continuing.
+For the full SillyAgent feature set, use Node.js 22.5 or newer (Node.js 24 is recommended). Node.js 20 can run the underlying SillyTavern app, but the SQLite-backed persistent memory, roleplay state, and background worker will be unavailable. If Termux says Node or npm cannot be found, finish package installation and reopen the shell before continuing.
 
 On 32-bit Android only, if npm reports an unsupported `android arm LEtime-web` platform dependency, install the Termux package noted by the upstream Android guide:
 
@@ -104,7 +105,7 @@ Use `nano` to edit configuration files. Android may pause background apps to sav
 ### Termux troubleshooting
 
 - **Mirror or package downloads fail:** rerun `termux-change-repo`, select a reachable mirror, then run `pkg update`.
-- **Wrong Node.js version:** run `pkg upgrade nodejs-lts` and check `node --version` again.
+- **SillyAgent memory/state features are unavailable:** check `node --version`; these features require Node.js 22.5 or newer. On Termux, run `pkg upgrade nodejs-lts`, then check the version again.
 - **Native dependency build/platform error:** make sure you're using the current Termux app and packages. On 32-bit Android, try `pkg install esbuild` for the specific `android arm LEtime-web` error.
 - **Server starts, but the browser cannot connect:** use the exact local URL printed by the server. Check that Termux is still running and that the port has not been changed in configuration.
 - **Install fails because storage is low:** free storage and retry. The application, dependencies, chat data, and backups all need space.
