@@ -50,6 +50,8 @@ jobs:
           src/agent/reflection-worker.js
           src/agent/runtime.js
           src/endpoints/agent-tools.js
+          src/endpoints/chats.js
+          src/endpoints/characters.js
           src/middleware/agent-tools-body-limit.js
           src/server-startup.js
           src/server-main.js
