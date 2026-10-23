@@ -66,14 +66,13 @@ export async function deleteAgentChatPartitionIfPresent(input, chatId, character
 
     let memory = null;
     let roleplayState = null;
-    if (memoryExists) {
-        const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
-        memory = store.deleteChatPartition(scopeId);
-    }
-    if (stateExists) {
-        const store = await getAgentRoleplayStateStore({ ...directories, root });
-        roleplayState = store.deleteChatPartition(scopeId);
-    }
+    // Always create the tombstone stores before deleting the source file. Otherwise a
+    // request that initializes SillyAgent storage concurrently could write into a
+    // previously nonexistent database after the deletion route checked for it.
+    const memoryStore = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
+    memory = memoryStore.deleteChatPartition(scopeId);
+    const stateStore = await getAgentRoleplayStateStore({ ...directories, root });
+    roleplayState = stateStore.deleteChatPartition(scopeId);
 
     return {
         found: memoryExists || stateExists,
@@ -118,30 +117,23 @@ export async function deleteAgentCharacterPartitionsIfPresent(input, characterId
     const skillPartition = createHash('sha256').update(normalizedCharacterId, 'utf8').digest('hex');
     const skillDatabasePath = path.join(root, 'sillyagent', 'skills', skillPartition + '.sqlite');
 
-    let memory = null;
-    let roleplayState = null;
-    let skills = null;
-    if (memoryStores.has(memoryDatabasePath) || existsSync(memoryDatabasePath)) {
-        const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
-        memory = store.deleteCharacterPartition(normalizedCharacterId);
+    // Create all three lifecycle guards even when a store did not exist yet.
+    // This closes the race where a stale request opens a fresh DB after deletion.
+    const memoryStore = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
+    const memory = memoryStore.deleteCharacterPartition(normalizedCharacterId);
+    const stateStore = await getAgentRoleplayStateStore({ ...directories, root });
+    const roleplayState = {
+        character: stateStore.deleteCharacterPartition(normalizedCharacterId),
+        orphanedChatPartitions: [],
+    };
+    for (const scopeId of memory?.purgedChatScopeIds ?? []) {
+        roleplayState.orphanedChatPartitions.push({
+            scopeId,
+            ...stateStore.deleteChatPartition(scopeId),
+        });
     }
-    if (roleplayStateStores.has(stateDatabasePath) || existsSync(stateDatabasePath)) {
-        const store = await getAgentRoleplayStateStore({ ...directories, root });
-        roleplayState = {
-            character: store.deleteCharacterPartition(normalizedCharacterId),
-            orphanedChatPartitions: [],
-        };
-        for (const scopeId of memory?.purgedChatScopeIds ?? []) {
-            roleplayState.orphanedChatPartitions.push({
-                scopeId,
-                ...store.deleteChatPartition(scopeId),
-            });
-        }
-    }
-    if (skillStores.has(skillDatabasePath) || existsSync(skillDatabasePath)) {
-        const store = await getAgentSkillStore({ ...directories, root }, normalizedCharacterId);
-        skills = store.clearAll();
-    }
+    const skillStore = await getAgentSkillStore({ ...directories, root }, normalizedCharacterId);
+    const skills = skillStore.clearAll();
 
     return {
         characterId: normalizedCharacterId,
