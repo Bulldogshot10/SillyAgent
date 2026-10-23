@@ -11,22 +11,6 @@ const memoryStores = new Map();
 const skillStores = new Map();
 const roleplayStateStores = new Map();
 const workerHandles = new Map();
-const lifecycleLocks = new Map();
-
-async function withLifecycleLock(key, operation) {
-    const previous = lifecycleLocks.get(key) ?? Promise.resolve();
-    let release;
-    const gate = new Promise(resolve => { release = resolve; });
-    const tail = previous.catch(() => {}).then(() => gate);
-    lifecycleLocks.set(key, tail);
-    await previous.catch(() => {});
-    try {
-        return await operation();
-    } finally {
-        release();
-        if (lifecycleLocks.get(key) === tail) lifecycleLocks.delete(key);
-    }
-}
 const deletingPartitions = new Map();
 
 function partitionLockKey(root, kind, id) {
@@ -109,46 +93,6 @@ export function getAgentScopedChatId(chatId, characterId = null) {
         .digest('hex');
 }
 
-/**
- * Serialize native chat lifecycle mutations for one data root and chat partition.
- * Use the same lock around the persistent-store purge and source-file unlink.
- * @param {string|object} input User directories.
- * @param {string} chatId Raw SillyTavern chat ID.
- * @param {string|null} characterId Character ID, or null for group chats.
- * @param {Function} operation Lifecycle mutation to serialize.
- * @returns {Promise<*>} Operation result.
- */
-export async function withAgentChatPartitionLock(input, chatId, characterId, operation) {
-    const { root } = normalizeDirectories(input);
-    const scopeId = getAgentScopedChatId(chatId, characterId);
-    if (!scopeId) throw new TypeError('A valid chat ID is required for SillyAgent chat lifecycle locking.');
-    if (typeof operation !== 'function') throw new TypeError('A chat lifecycle operation callback is required.');
-    return await withLifecycleLock(root + '\\0chat\\0' + scopeId, operation);
-}
-
-/**
- * Serialize native character deletion and chat activation for one character.
- * @param {string|object} input User directories.
- * @param {string} characterId Character avatar identifier.
- * @param {Function} operation Lifecycle mutation to serialize.
- * @returns {Promise<*>} Operation result.
- */
-export async function withAgentCharacterPartitionLock(input, characterId, operation) {
-    const { root } = normalizeDirectories(input);
-    if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) {
-        throw new TypeError('A valid character ID is required for SillyAgent character lifecycle locking.');
-    }
-    if (typeof operation !== 'function') throw new TypeError('A character lifecycle operation callback is required.');
-    return await withLifecycleLock(root + '\\0character\\0' + characterId.trim(), operation);
-}
-
-/**
- * Remove deletion tombstones only from already-existing character stores. The caller
- * must hold the character lifecycle lock and verify the owning character file exists.
- * @param {string|object} input User directories.
- * @param {string} characterId Character avatar identifier.
- * @returns {Promise<object>} Tombstone activation results.
- */
 export async function getAgentMemoryStore(input, { startWorker = true } = {}) {
     const { directories, root } = normalizeDirectories(input);
     const databasePath = path.join(root, 'sillyagent', 'memory.sqlite');
