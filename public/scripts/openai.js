@@ -1645,36 +1645,43 @@ function getChatCompletionErrorMessage(data, response) {
  * @param {boolean?} [options.quiet=false] Suppress toast messages
  */
 export function tryParseStreamingError(response, decoded, { quiet = false } = {}) {
+    let data;
     try {
-        const data = JSON.parse(decoded);
-
-        if (!data) {
-            return;
-        }
-
-        checkQuotaError(data, { quiet });
-        checkModerationError(data, { quiet });
-
-        // these do not throw correctly (equiv to Error("[object Object]"))
-        // if trying to fix "[object Object]" displayed to users, start here
-
-        if (data.error) {
-            !quiet && toastr.error(getChatCompletionErrorMessage(data, response), 'Chat Completion API');
-            throw new Error(data);
-        }
-
-        if (data.message) {
-            !quiet && toastr.error(data.message, 'Chat Completion API');
-            throw new Error(data);
-        }
-
-        if (data.detail) {
-            !quiet && toastr.error(getChatCompletionErrorMessage(data, response), 'Chat Completion API');
-            throw new Error(data);
-        }
+        data = JSON.parse(decoded);
     } catch {
-        // No JSON. Do nothing.
+        // Most stream chunks are ordinary provider payloads, not standalone JSON error bodies.
+        return;
     }
+
+    if (!data) {
+        return;
+    }
+
+    // Keep provider error handling outside the JSON.parse catch. These checks
+    // intentionally throw; swallowing those exceptions let failed streams look
+    // like successful but empty model responses.
+    checkQuotaError(data, { quiet });
+    checkModerationError(data, { quiet });
+
+    let message = '';
+    if (data.error) {
+        message = getChatCompletionErrorMessage(data, response);
+    } else if (typeof data.message === 'string' && data.message) {
+        message = data.message;
+    } else if (data.detail) {
+        message = getChatCompletionErrorMessage(data, response);
+    }
+
+    if (!message) {
+        return;
+    }
+
+    const error = new Error(message);
+    if (!quiet) {
+        toastr.error(message, 'Chat Completion API');
+        error.sillyAgentErrorNotified = true;
+    }
+    throw error;
 }
 
 /**
@@ -3195,7 +3202,9 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, al
         if (data.error) {
             const message = getChatCompletionErrorMessage(data, response);
             toastr.error(message, t`API returned an error`);
-            throw new Error(message);
+            const error = new Error(message);
+            error.sillyAgentErrorNotified = true;
+            throw error;
         }
 
         if (type !== 'quiet') {
