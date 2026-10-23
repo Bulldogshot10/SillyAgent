@@ -190,6 +190,10 @@ export class RoleplayStateStore {
             'CREATE TABLE IF NOT EXISTS roleplay_deleted_chat_partitions (' +
             'scope_id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);',
         );
+        this.#db.exec(
+            'CREATE TABLE IF NOT EXISTS roleplay_deleted_character_partitions (' +
+            'scope_id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);',
+        );
     }
 
     getState({ stateType, scopeId, keys } = {}) {
@@ -228,10 +232,12 @@ export class RoleplayStateStore {
 
         this.#db.exec('BEGIN IMMEDIATE');
         try {
-            if (stateType !== 'character' && this.#db.prepare(
-                'SELECT 1 FROM roleplay_deleted_chat_partitions WHERE scope_id = ? LIMIT 1',
-            ).get(normalizedScopeId)) {
-                const conflict = new Error('This chat was deleted; its roleplay state cannot be modified.');
+            const deletedPartition = stateType === 'character'
+                ? this.#db.prepare('SELECT 1 FROM roleplay_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(normalizedScopeId)
+                : this.#db.prepare('SELECT 1 FROM roleplay_deleted_chat_partitions WHERE scope_id = ? LIMIT 1').get(normalizedScopeId);
+            if (deletedPartition) {
+                const owner = stateType === 'character' ? 'character' : 'chat';
+                const conflict = new Error('This ' + owner + ' was deleted; its roleplay state cannot be modified.');
                 conflict.code = 'state_conflict';
                 conflict.currentVersion = 0;
                 throw conflict;
@@ -370,6 +376,10 @@ export class RoleplayStateStore {
         const normalizedCharacterId = validateScopeId(characterId);
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            this.#db.prepare(
+                'INSERT INTO roleplay_deleted_character_partitions(scope_id, deleted_at) VALUES (?, ?) ' +
+                'ON CONFLICT(scope_id) DO UPDATE SET deleted_at = excluded.deleted_at',
+            ).run(normalizedCharacterId, Date.now());
             const deletedStates = this.#db.prepare(
                 'SELECT COUNT(*) AS count FROM roleplay_state WHERE state_type = ? AND scope_id = ?',
             ).get('character', normalizedCharacterId).count;
@@ -384,6 +394,26 @@ export class RoleplayStateStore {
             ).run('character', normalizedCharacterId);
             this.#db.exec('COMMIT;');
             return { deletedStates, deletedEvents };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    /**
+     * Allow writes to a character partition only after the core confirms that its character exists.
+     * @param {string} characterId Character identifier.
+     * @returns {{activated: boolean}} Whether a deletion tombstone was removed.
+     */
+    activateCharacterPartition(characterId) {
+        const normalizedCharacterId = validateScopeId(characterId);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const result = this.#db.prepare(
+                'DELETE FROM roleplay_deleted_character_partitions WHERE scope_id = ?',
+            ).run(normalizedCharacterId);
+            this.#db.exec('COMMIT;');
+            return { activated: result.changes > 0 };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
             throw error;
