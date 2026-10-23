@@ -68,6 +68,22 @@ describe('SillyAgentRunner', () => {
         expect(steps.map(step => step.policy.allowToolCalls)).toEqual([true, true, true]);
     });
 
+    test('reports an unnormalizable tool-call handoff instead of silently returning no assistant response', async () => {
+        const { runner, calls } = makeRunner();
+        await expect(runner.run({
+            type: 'normal',
+            generateStep: async () => ({
+                __sillyAgentRunner: true,
+                kind: 'tool_calls',
+                responseData: [],
+            }),
+        })).rejects.toThrow('could not normalize any executable tool calls');
+
+        expect(calls.executed).toHaveLength(0);
+        expect(calls.saved).toHaveLength(0);
+        expect(calls.stops).toEqual(['normal']);
+    });
+
     test('turns off tool schemas after the round budget and performs a final tool-free generation', async () => {
         const { runner, calls } = makeRunner();
         let modelSteps = 0;
