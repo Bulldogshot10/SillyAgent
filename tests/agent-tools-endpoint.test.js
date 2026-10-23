@@ -24,10 +24,31 @@ beforeAll(async () => {
     previousMemoryProposalsEnv = process.env[memoryProposalsEnvKey];
     process.env[memoryProposalsEnvKey] = 'true';
     userRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-endpoint-'));
+    const charactersDirectory = path.join(userRoot, 'characters');
+    const chatsDirectory = path.join(userRoot, 'chats');
+    const groupChatsDirectory = path.join(userRoot, 'groupChats');
+    await Promise.all([
+        fs.mkdir(charactersDirectory, { recursive: true }),
+        fs.mkdir(chatsDirectory, { recursive: true }),
+        fs.mkdir(groupChatsDirectory, { recursive: true }),
+    ]);
+    await fs.writeFile(path.join(charactersDirectory, 'harness-character.png'), 'test character');
+    await fs.writeFile(path.join(charactersDirectory, 'character-a.png'), 'test character');
+    await fs.writeFile(path.join(charactersDirectory, 'character-b.png'), 'test character');
+    await fs.writeFile(path.join(charactersDirectory, 'julia-card.png'), 'test character');
+    await fs.writeFile(path.join(charactersDirectory, 'character-auto-review.png'), 'test character');
+    await fs.writeFile(path.join(charactersDirectory, 'bella-card.png'), 'test character');
+    await fs.writeFile(path.join(charactersDirectory, 'auto-memory-character.png'), 'test character');
+    const userDirectories = {
+        root: userRoot,
+        characters: charactersDirectory,
+        chats: chatsDirectory,
+        groupChats: groupChatsDirectory,
+    };
     const app = express();
     app.use(express.json());
     app.use((request, _response, next) => {
-        request.user = { directories: { root: userRoot } };
+        request.user = { directories: userDirectories };
         next();
     });
     app.use('/api/agent/tools', router);
