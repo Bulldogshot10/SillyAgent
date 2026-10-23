@@ -164,7 +164,7 @@ export function registerBuiltinTools(registry = toolRegistry) {
                     requireApproval: context.requireMemoryApproval,
                 });
                 return {
-                    created: !proposal.duplicate,
+                    created: !proposal.duplicate && !proposal.deleted && !proposal.staleEvidence,
                     scope,
                     duplicate: !!proposal.duplicate,
                     requiresReview: proposal.requiresReview,
