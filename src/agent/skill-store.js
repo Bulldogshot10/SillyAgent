@@ -151,9 +151,23 @@ export class SkillStore {
         }
     }
 
+    #assertCharacterActive() {
+        const row = this.#db.prepare('SELECT deleted FROM skill_store_lifecycle WHERE singleton = 1').get();
+        if (row?.deleted === 1) {
+            const error = new Error('This character was deleted; procedural skill writes are blocked until the character is reopened.');
+            error.code = 'character_partition_deleted';
+            throw error;
+        }
+    }
+
     #initialize() {
         this.#db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2500; PRAGMA secure_delete = ON; PRAGMA trusted_schema = OFF;');
         this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+        this.#db.exec(
+            'CREATE TABLE IF NOT EXISTS skill_store_lifecycle (' +
+            'singleton INTEGER PRIMARY KEY CHECK (singleton = 1), deleted INTEGER NOT NULL CHECK (deleted IN (0, 1)));',
+        );
+        this.#db.prepare('INSERT OR IGNORE INTO skill_store_lifecycle(singleton, deleted) VALUES (1, 0)').run();
         this.#db.exec(
             'CREATE TABLE IF NOT EXISTS skills (' +
             'slug TEXT PRIMARY KEY, next_version INTEGER NOT NULL DEFAULT 1, active_version INTEGER, ' +
@@ -200,6 +214,7 @@ export class SkillStore {
         }
         if (Object.hasOwn(input, 'requireApproval')) {
             if (typeof input.requireApproval !== 'boolean') throw new TypeError('requireApproval must be a boolean.');
+            this.#assertCharacterActive();
             this.#db.prepare(
                 'INSERT INTO skill_settings (key, value) VALUES (?, ?) ' +
                 'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
@@ -305,6 +320,7 @@ export class SkillStore {
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            this.#assertCharacterActive();
             let skill = this.#db.prepare('SELECT * FROM skills WHERE slug = ?').get(normalizedSlug);
             const active = skill?.active_version
                 ? this.#db.prepare('SELECT * FROM skill_revisions WHERE slug = ? AND version = ?')
@@ -412,8 +428,9 @@ export class SkillStore {
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            this.#assertCharacterActive();
             const revision = this.#db.prepare(
-                'SELECT * FROM skill_revisions WHERE slug = ? AND version = ? AND status = \'pending\'',
+                'SELECT * FROM skill_revisions WHERE slug = ? AND version = \'pending\'',
             ).get(normalizedSlug, version);
             if (!revision) {
                 this.#db.exec('COMMIT;');
@@ -502,8 +519,27 @@ export class SkillStore {
             const revisions = this.#db.prepare('SELECT COUNT(*) AS count FROM skill_revisions').get().count;
             const events = this.#db.prepare('SELECT COUNT(*) AS count FROM skill_events').get().count;
             this.#db.exec('DELETE FROM skill_events; DELETE FROM skill_revisions; DELETE FROM skills; DELETE FROM skill_settings;');
+            this.#db.prepare('UPDATE skill_store_lifecycle SET deleted = 1 WHERE singleton = 1').run();
             this.#db.exec('COMMIT;');
             return { skills, revisions, events };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    /**
+     * Re-enable procedural skill writes after the core verifies the owning character exists.
+     * @returns {{activated: boolean}} Whether the tombstone was cleared.
+     */
+    activateCharacterPartition() {
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const result = this.#db.prepare(
+                'UPDATE skill_store_lifecycle SET deleted = 0 WHERE singleton = 1 AND deleted = 1',
+            ).run();
+            this.#db.exec('COMMIT;');
+            return { activated: result.changes > 0 };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
             throw error;
