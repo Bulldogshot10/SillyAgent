@@ -578,7 +578,11 @@ router.post('/memory/activate-chat', async (request, response) => {
     }
     try {
         const store = await getMemoryStore(request);
-        return response.json({ ok: true, ...store.activateChatPartition(scopedChatId) });
+        const directories = request.user?.directories ?? { root: request.user?.directories?.root ?? globalThis.DATA_ROOT };
+        const roleplayStateStore = await getAgentRoleplayStateStore(directories);
+        const memoryActivation = store.activateChatPartition(scopedChatId);
+        const roleplayActivation = roleplayStateStore.activateChatPartition(scopedChatId);
+        return response.json({ ok: true, ...memoryActivation, roleplayState: roleplayActivation });
     } catch (error) {
         return sendMemoryError(response, error);
     }
