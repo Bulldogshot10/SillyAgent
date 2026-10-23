@@ -67,7 +67,7 @@ jobs:
           public/scripts/sillyagent-memory-context.js
 
       - name: Lint test files
-        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-runner.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js agent-tools-body-limit.test.js agent-skill-store.test.js agent-skill-endpoint.test.js agent-reflection-worker.test.js agent-runtime.test.js agent-roleplay-state-store.test.js agent-roleplay-tools.test.js
+        run: npx eslint agent-tool-registry.test.js agent-tools-endpoint.test.js agent-runner.test.js agent-memory-store.test.js agent-dreaming.test.js agent-memory-prompt.test.js agent-tools-body-limit.test.js agent-skill-store.test.js agent-skill-endpoint.test.js agent-reflection-worker.test.js agent-runtime.test.js agent-roleplay-state-store.test.js agent-roleplay-tools.test.js openai-tool-calls.test.js
         working-directory: tests
 
       - name: Run unit tests
