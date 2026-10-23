@@ -10,9 +10,9 @@ This repository is a modified fork of [SillyTavern](https://github.com/SillyTave
 
 ## npm dependency inventory
 
-The following inventory is generated from the checked-in `package-lock.json` (lockfile version 3). It includes direct and transitive packages represented by `node_modules/*` lockfile entries, at the versions recorded in that file. License values below are reproduced from the package-lock metadata where present.
+The following inventory is generated from the checked-in `package-lock.json` (lockfile version 3). It includes direct and transitive packages represented by `node_modules/*` lockfile entries, at the versions recorded in that file. License values use lockfile metadata where present. For the 54 package paths whose lockfile entries omitted a `license` field, the matching package release/source license was checked against upstream license files or published package-license records; those rows are marked as verified upstream, with evidence linked below.
 
-**Important:** this inventory is an index, not a replacement for the actual license files shipped with each package. A missing license value means the lockfile did not declare one; it does not mean the package is unlicensed. Entries with a custom license string or a missing value should be checked against the named package's published source and license file before redistributing a bundled copy.
+**Important:** this inventory is an index, not a replacement for the actual license files and copyright notices shipped with each package. A missing license field in `package-lock.json` is a metadata omission, not evidence that a package is unlicensed. Keep each package's actual license file and notices intact when redistributing a bundle that includes that package. This repository does not commit `node_modules`; its lockfile identifies the packages fetched by the package manager.
 
 
 Total lockfile package entries: **829**.
@@ -174,7 +174,7 @@ Total lockfile package entries: **829**.
 | `@types/eslint-scope` | 3.7.7 | MIT |
 | `@types/estree` | 1.0.8 | MIT |
 | `@types/express` | 4.17.23 | MIT |
-| `@types/express-serve-static-core` | 4.19.6 | Not declared in lockfile; inspect package license file |
+| `@types/express-serve-static-core` | 4.19.6 | MIT (verified upstream; lockfile metadata omitted) |
 | `@types/http-cache-semantics` | 4.0.2 | MIT |
 | `@types/http-errors` | 2.0.4 | MIT |
 | `@types/jquery` | 3.5.33 | MIT |
@@ -194,8 +194,8 @@ Total lockfile package entries: **829**.
 | `@types/node-persist` | 3.1.8 | MIT |
 | `@types/png-chunk-text` | 1.0.3 | MIT |
 | `@types/png-chunks-extract` | 1.0.2 | MIT |
-| `@types/qs` | 6.9.16 | Not declared in lockfile; inspect package license file |
-| `@types/range-parser` | 1.2.7 | Not declared in lockfile; inspect package license file |
+| `@types/qs` | 6.9.16 | MIT (verified upstream; lockfile metadata omitted) |
+| `@types/range-parser` | 1.2.7 | MIT (verified upstream; lockfile metadata omitted) |
 | `@types/readdir-glob` | 1.1.5 | MIT |
 | `@types/response-time` | 2.3.9 | MIT |
 | `@types/responselike` | 1.0.1 | MIT |
@@ -203,7 +203,7 @@ Total lockfile package entries: **829**.
 | `@types/semver` | 7.7.1 | MIT |
 | `@types/send` | 0.17.4 | MIT |
 | `@types/serve-static` | 1.15.7 | MIT |
-| `@types/sizzle` | 2.3.8 | Not declared in lockfile; inspect package license file |
+| `@types/sizzle` | 2.3.8 | MIT (verified upstream; lockfile metadata omitted) |
 | `@types/toastr` | 2.1.43 | MIT |
 | `@types/trusted-types` | 2.0.7 | MIT |
 | `@types/write-file-atomic` | 4.0.3 | MIT |
@@ -255,34 +255,34 @@ Total lockfile package entries: **829**.
 | `any-base` | 1.1.0 | MIT |
 | `app-root-path` | 3.1.0 | MIT |
 | `append-field` | 1.0.0 | MIT |
-| `archiver` | 7.0.1 | Not declared in lockfile; inspect package license file |
-| `archiver-utils` | 5.0.2 | Not declared in lockfile; inspect package license file |
+| `archiver` | 7.0.1 | MIT (verified upstream; lockfile metadata omitted) |
+| `archiver-utils` | 5.0.2 | MIT (verified upstream; lockfile metadata omitted) |
 | `archiver-utils/node_modules/brace-expansion` | 2.1.0 | MIT |
 | `archiver-utils/node_modules/glob` | 10.5.0 | ISC |
 | `archiver-utils/node_modules/minimatch` | 9.0.9 | ISC |
-| `archiver-utils/node_modules/readable-stream` | 4.5.2 | Not declared in lockfile; inspect package license file |
-| `archiver-utils/node_modules/safe-buffer` | 5.2.1 | Not declared in lockfile; inspect package license file |
-| `archiver-utils/node_modules/string_decoder` | 1.3.0 | Not declared in lockfile; inspect package license file |
-| `archiver/node_modules/buffer-crc32` | 1.0.0 | Not declared in lockfile; inspect package license file |
-| `archiver/node_modules/readable-stream` | 4.5.2 | Not declared in lockfile; inspect package license file |
-| `archiver/node_modules/safe-buffer` | 5.2.1 | Not declared in lockfile; inspect package license file |
-| `archiver/node_modules/string_decoder` | 1.3.0 | Not declared in lockfile; inspect package license file |
+| `archiver-utils/node_modules/readable-stream` | 4.5.2 | MIT (verified upstream; lockfile metadata omitted) |
+| `archiver-utils/node_modules/safe-buffer` | 5.2.1 | MIT (verified upstream; lockfile metadata omitted) |
+| `archiver-utils/node_modules/string_decoder` | 1.3.0 | MIT (verified upstream; lockfile metadata omitted) |
+| `archiver/node_modules/buffer-crc32` | 1.0.0 | MIT (verified upstream; lockfile metadata omitted) |
+| `archiver/node_modules/readable-stream` | 4.5.2 | MIT (verified upstream; lockfile metadata omitted) |
+| `archiver/node_modules/safe-buffer` | 5.2.1 | MIT (verified upstream; lockfile metadata omitted) |
+| `archiver/node_modules/string_decoder` | 1.3.0 | MIT (verified upstream; lockfile metadata omitted) |
 | `are-docs-informative` | 0.0.2 | MIT |
 | `argparse` | 2.0.1 | Python-2.0 |
 | `array-flatten` | 1.1.1 | MIT |
 | `array-union` | 2.1.0 | MIT |
 | `ast-types` | 0.13.4 | MIT |
-| `async` | 3.2.5 | Not declared in lockfile; inspect package license file |
+| `async` | 3.2.5 | MIT (verified upstream; lockfile metadata omitted) |
 | `async-lock` | 1.4.1 | MIT |
 | `asynckit` | 0.4.0 | MIT |
 | `available-typed-arrays` | 1.0.7 | MIT |
 | `await-to-js` | 3.0.0 | MIT |
 | `axios` | 1.15.2 | MIT |
 | `axios/node_modules/proxy-from-env` | 2.1.0 | MIT |
-| `b4a` | 1.6.6 | Not declared in lockfile; inspect package license file |
+| `b4a` | 1.6.6 | Apache-2.0 (verified upstream; lockfile metadata omitted) |
 | `balanced-match` | 1.0.2 | MIT |
-| `bare-events` | 2.2.2 | Not declared in lockfile; inspect package license file |
-| `base-64` | 0.1.0 | Not declared in lockfile; inspect package license file |
+| `bare-events` | 2.2.2 | Apache-2.0 (verified upstream; lockfile metadata omitted) |
+| `base-64` | 0.1.0 | MIT (verified upstream; lockfile metadata omitted) |
 | `base64-js` | 1.5.1 | MIT |
 | `baseline-browser-mapping` | 2.9.19 | Apache-2.0 |
 | `basic-ftp` | 5.3.1 | MIT |
@@ -303,7 +303,7 @@ Total lockfile package entries: **829**.
 | `buffer-equal` | 0.0.1 | MIT |
 | `buffer-from` | 1.1.2 | MIT |
 | `bundle-name` | 4.1.0 | MIT |
-| `busboy` | 1.6.0 | Not declared in lockfile; inspect package license file |
+| `busboy` | 1.6.0 | MIT (verified upstream; lockfile metadata omitted) |
 | `bytes` | 3.1.2 | MIT |
 | `cacheable-lookup` | 5.0.4 | MIT |
 | `cacheable-request` | 7.0.4 | MIT |
@@ -329,11 +329,11 @@ Total lockfile package entries: **829**.
 | `command-exists` | 1.2.9 | MIT |
 | `commander` | 2.20.3 | MIT |
 | `comment-parser` | 1.4.1 | MIT |
-| `compress-commons` | 6.0.2 | Not declared in lockfile; inspect package license file |
-| `compress-commons/node_modules/crc-32` | 1.2.2 | Not declared in lockfile; inspect package license file |
-| `compress-commons/node_modules/readable-stream` | 4.5.2 | Not declared in lockfile; inspect package license file |
-| `compress-commons/node_modules/safe-buffer` | 5.2.1 | Not declared in lockfile; inspect package license file |
-| `compress-commons/node_modules/string_decoder` | 1.3.0 | Not declared in lockfile; inspect package license file |
+| `compress-commons` | 6.0.2 | MIT (verified upstream; lockfile metadata omitted) |
+| `compress-commons/node_modules/crc-32` | 1.2.2 | Apache-2.0 (verified upstream; lockfile metadata omitted) |
+| `compress-commons/node_modules/readable-stream` | 4.5.2 | MIT (verified upstream; lockfile metadata omitted) |
+| `compress-commons/node_modules/safe-buffer` | 5.2.1 | MIT (verified upstream; lockfile metadata omitted) |
+| `compress-commons/node_modules/string_decoder` | 1.3.0 | MIT (verified upstream; lockfile metadata omitted) |
 | `compressible` | 2.0.18 | MIT |
 | `compression` | 1.8.1 | MIT |
 | `compression/node_modules/negotiator` | 0.6.4 | MIT |
@@ -347,20 +347,20 @@ Total lockfile package entries: **829**.
 | `cookie` | 0.7.2 | MIT |
 | `cookie-parser` | 1.4.7 | MIT |
 | `cookie-session` | 2.1.1 | MIT |
-| `cookie-session/node_modules/debug` | 3.2.7 | Not declared in lockfile; inspect package license file |
-| `cookie-session/node_modules/ms` | 2.1.3 | Not declared in lockfile; inspect package license file |
-| `cookie-session/node_modules/safe-buffer` | 5.2.1 | Not declared in lockfile; inspect package license file |
+| `cookie-session/node_modules/debug` | 3.2.7 | MIT (verified upstream; lockfile metadata omitted) |
+| `cookie-session/node_modules/ms` | 2.1.3 | MIT (verified upstream; lockfile metadata omitted) |
+| `cookie-session/node_modules/safe-buffer` | 5.2.1 | MIT (verified upstream; lockfile metadata omitted) |
 | `cookie-signature` | 1.0.6 | MIT |
-| `cookies` | 0.9.1 | Not declared in lockfile; inspect package license file |
+| `cookies` | 0.9.1 | MIT (verified upstream; lockfile metadata omitted) |
 | `core-util-is` | 1.0.3 | MIT |
 | `cors` | 2.8.5 | MIT |
 | `crc` | 4.3.2 | MIT |
 | `crc-32` | 0.3.0 | Apache-2.0 |
-| `crc32-stream` | 6.0.0 | Not declared in lockfile; inspect package license file |
-| `crc32-stream/node_modules/crc-32` | 1.2.2 | Not declared in lockfile; inspect package license file |
-| `crc32-stream/node_modules/readable-stream` | 4.5.2 | Not declared in lockfile; inspect package license file |
-| `crc32-stream/node_modules/safe-buffer` | 5.2.1 | Not declared in lockfile; inspect package license file |
-| `crc32-stream/node_modules/string_decoder` | 1.3.0 | Not declared in lockfile; inspect package license file |
+| `crc32-stream` | 6.0.0 | MIT (verified upstream; lockfile metadata omitted) |
+| `crc32-stream/node_modules/crc-32` | 1.2.2 | Apache-2.0 (verified upstream; lockfile metadata omitted) |
+| `crc32-stream/node_modules/readable-stream` | 4.5.2 | MIT (verified upstream; lockfile metadata omitted) |
+| `crc32-stream/node_modules/safe-buffer` | 5.2.1 | MIT (verified upstream; lockfile metadata omitted) |
+| `crc32-stream/node_modules/string_decoder` | 1.3.0 | MIT (verified upstream; lockfile metadata omitted) |
 | `cross-spawn` | 7.0.5 | MIT |
 | `crypt` | 0.0.2 | BSD-3-Clause |
 | `csrf-sync` | 4.2.1 | ISC |
@@ -385,13 +385,13 @@ Total lockfile package entries: **829**.
 | `dir-glob` | 3.0.1 | MIT |
 | `doctrine` | 3.0.0 | Apache-2.0 |
 | `dom-serializer` | 2.0.0 | MIT |
-| `dom-walk` | 0.1.2 | Not declared in lockfile; inspect package license file |
+| `dom-walk` | 0.1.2 | MIT (verified upstream; lockfile metadata omitted) |
 | `domelementtype` | 2.3.0 | BSD-2-Clause |
 | `domhandler` | 5.0.3 | BSD-2-Clause |
 | `dompurify` | 3.4.2 | (MPL-2.0 OR Apache-2.0) |
 | `domutils` | 3.1.0 | BSD-2-Clause |
 | `dotenv` | 8.6.0 | BSD-2-Clause |
-| `droll` | 0.2.1 | Not declared in lockfile; inspect package license file |
+| `droll` | 0.2.1 | MIT (verified upstream; lockfile metadata omitted) |
 | `dunder-proto` | 1.0.1 | MIT |
 | `eastasianwidth` | 0.2.0 | MIT |
 | `ee-first` | 1.1.1 | MIT |
@@ -434,12 +434,12 @@ Total lockfile package entries: **829**.
 | `esutils` | 2.0.3 | BSD-2-Clause |
 | `etag` | 1.8.1 | MIT |
 | `event-target-shim` | 5.0.1 | MIT |
-| `events` | 3.3.0 | Not declared in lockfile; inspect package license file |
-| `exif-parser` | 0.1.12 | Not declared in lockfile; inspect package license file |
+| `events` | 3.3.0 | MIT (verified upstream; lockfile metadata omitted) |
+| `exif-parser` | 0.1.12 | MIT (verified upstream; lockfile metadata omitted) |
 | `express` | 4.22.1 | MIT |
 | `express/node_modules/safe-buffer` | 5.2.1 | MIT |
 | `fast-deep-equal` | 3.1.3 | MIT |
-| `fast-fifo` | 1.3.2 | Not declared in lockfile; inspect package license file |
+| `fast-fifo` | 1.3.2 | MIT (verified upstream; lockfile metadata omitted) |
 | `fast-glob` | 3.3.3 | MIT |
 | `fast-json-stable-stringify` | 2.1.0 | MIT |
 | `fast-levenshtein` | 2.0.6 | MIT |
@@ -457,7 +457,7 @@ Total lockfile package entries: **829**.
 | `flatted` | 3.4.2 | ISC |
 | `follow-redirects` | 1.16.0 | MIT |
 | `for-each` | 0.3.5 | MIT |
-| `foreground-child` | 3.1.1 | Not declared in lockfile; inspect package license file |
+| `foreground-child` | 3.1.1 | ISC (verified upstream; lockfile metadata omitted) |
 | `form-data` | 4.0.5 | MIT |
 | `form-data-encoder` | 1.7.2 | MIT |
 | `form-data/node_modules/mime-types` | 2.1.35 | MIT |
@@ -487,7 +487,7 @@ Total lockfile package entries: **829**.
 | `gopd` | 1.2.0 | MIT |
 | `got` | 11.8.6 | MIT |
 | `gpt-3-encoder` | 1.1.4 | MIT |
-| `graceful-fs` | 4.2.11 | Not declared in lockfile; inspect package license file |
+| `graceful-fs` | 4.2.11 | ISC (verified upstream; lockfile metadata omitted) |
 | `graphemer` | 1.4.0 | MIT |
 | `guid-typescript` | 1.0.9 | ISC |
 | `handlebars` | 4.7.9 | MIT |
@@ -536,7 +536,7 @@ Total lockfile package entries: **829**.
 | `is-inside-container` | 1.0.0 | MIT |
 | `is-number` | 7.0.0 | MIT |
 | `is-path-inside` | 3.0.3 | MIT |
-| `is-stream` | 2.0.1 | Not declared in lockfile; inspect package license file |
+| `is-stream` | 2.0.1 | MIT (verified upstream; lockfile metadata omitted) |
 | `is-typed-array` | 1.1.15 | MIT |
 | `is-wsl` | 3.1.0 | MIT |
 | `isarray` | 1.0.0 | MIT |
@@ -567,9 +567,9 @@ Total lockfile package entries: **829**.
 | `json-parse-even-better-errors` | 2.3.1 | MIT |
 | `json-schema-traverse` | 0.4.1 | MIT |
 | `json-stable-stringify-without-jsonify` | 1.0.1 | MIT |
-| `keygrip` | 1.1.0 | Not declared in lockfile; inspect package license file |
+| `keygrip` | 1.1.0 | MIT (verified upstream; lockfile metadata omitted) |
 | `keyv` | 4.5.3 | MIT |
-| `lazystream` | 1.0.1 | Not declared in lockfile; inspect package license file |
+| `lazystream` | 1.0.1 | MIT (verified upstream; lockfile metadata omitted) |
 | `levn` | 0.4.1 | MIT |
 | `lie` | 3.1.1 | MIT |
 | `load-bmfont` | 1.4.2 | MIT |
@@ -616,7 +616,7 @@ Total lockfile package entries: **829**.
 | `node-persist/node_modules/p-limit` | 3.1.0 | MIT |
 | `node-persist/node_modules/yocto-queue` | 0.1.0 | MIT |
 | `node-releases` | 2.0.27 | MIT |
-| `normalize-path` | 3.0.0 | Not declared in lockfile; inspect package license file |
+| `normalize-path` | 3.0.0 | MIT (verified upstream; lockfile metadata omitted) |
 | `normalize-url` | 6.1.0 | MIT |
 | `nth-check` | 2.1.1 | BSD-2-Clause |
 | `object-assign` | 4.1.1 | MIT |
@@ -683,7 +683,7 @@ Total lockfile package entries: **829**.
 | `punycode` | 2.3.1 | MIT |
 | `qs` | 6.14.2 | BSD-3-Clause |
 | `queue-microtask` | 1.2.3 | MIT |
-| `queue-tick` | 1.0.1 | Not declared in lockfile; inspect package license file |
+| `queue-tick` | 1.0.1 | MIT (verified upstream; lockfile metadata omitted) |
 | `quick-lru` | 5.1.1 | MIT |
 | `range-parser` | 1.2.1 | MIT |
 | `rate-limiter-flexible` | 5.0.5 | ISC |
@@ -696,7 +696,7 @@ Total lockfile package entries: **829**.
 | `readable-web-to-node-stream/node_modules/readable-stream` | 4.7.0 | MIT |
 | `readable-web-to-node-stream/node_modules/safe-buffer` | 5.2.1 | MIT |
 | `readable-web-to-node-stream/node_modules/string_decoder` | 1.3.0 | MIT |
-| `readdir-glob` | 1.1.3 | Not declared in lockfile; inspect package license file |
+| `readdir-glob` | 1.1.3 | Apache-2.0 (verified upstream; lockfile metadata omitted) |
 | `readdir-glob/node_modules/brace-expansion` | 2.1.0 | MIT |
 | `readdir-glob/node_modules/minimatch` | 5.1.9 | ISC |
 | `regenerator-runtime` | 0.13.11 | MIT |
@@ -760,8 +760,8 @@ Total lockfile package entries: **829**.
 | `spdx-license-ids` | 3.0.21 | CC0-1.0 |
 | `sprintf-js` | 1.1.3 | BSD-3-Clause |
 | `statuses` | 2.0.1 | MIT |
-| `streamsearch` | 1.1.0 | Not declared in lockfile; inspect package license file |
-| `streamx` | 2.16.1 | Not declared in lockfile; inspect package license file |
+| `streamsearch` | 1.1.0 | MIT (verified upstream; lockfile metadata omitted) |
+| `streamx` | 2.16.1 | MIT (verified upstream; lockfile metadata omitted) |
 | `string_decoder` | 1.1.1 | MIT |
 | `string-width` | 4.2.3 | MIT |
 | `string-width-cjs` | 4.2.3 | MIT |
@@ -772,7 +772,7 @@ Total lockfile package entries: **829**.
 | `supports-color` | 7.2.0 | MIT |
 | `synckit` | 0.9.2 | MIT |
 | `tapable` | 2.3.0 | MIT |
-| `tar-stream` | 3.1.7 | Not declared in lockfile; inspect package license file |
+| `tar-stream` | 3.1.7 | MIT (verified upstream; lockfile metadata omitted) |
 | `terser` | 5.46.0 | BSD-2-Clause |
 | `terser-webpack-plugin` | 5.3.17 | MIT |
 | `text-table` | 0.2.0 | MIT |
@@ -788,7 +788,7 @@ Total lockfile package entries: **829**.
 | `tr46` | 5.0.0 | MIT |
 | `truncate-utf8-bytes` | 1.0.2 | WTFPL |
 | `tslib` | 2.8.1 | 0BSD |
-| `tsscmp` | 1.0.6 | Not declared in lockfile; inspect package license file |
+| `tsscmp` | 1.0.6 | MIT (verified upstream; lockfile metadata omitted) |
 | `tsutils` | 3.21.0 | MIT |
 | `tsutils/node_modules/tslib` | 1.14.1 | 0BSD |
 | `type-check` | 0.4.0 | MIT |
@@ -808,7 +808,7 @@ Total lockfile package entries: **829**.
 | `utif2` | 4.1.0 | MIT |
 | `util-deprecate` | 1.0.2 | MIT |
 | `utils-merge` | 1.0.1 | MIT |
-| `uuid` | 9.0.1 | Not declared in lockfile; inspect package license file |
+| `uuid` | 9.0.1 | MIT (verified upstream; lockfile metadata omitted) |
 | `vary` | 1.1.2 | MIT |
 | `vectra` | 0.2.2 | MIT |
 | `wasm-feature-detect` | 1.8.0 | Apache-2.0 |
@@ -843,12 +843,60 @@ Total lockfile package entries: **829**.
 | `yargs` | 17.7.2 | MIT |
 | `yargs-parser` | 21.1.1 | ISC |
 | `yauzl` | 3.2.1 | MIT |
-| `zip-stream` | 6.0.1 | Not declared in lockfile; inspect package license file |
-| `zip-stream/node_modules/readable-stream` | 4.5.2 | Not declared in lockfile; inspect package license file |
-| `zip-stream/node_modules/safe-buffer` | 5.2.1 | Not declared in lockfile; inspect package license file |
-| `zip-stream/node_modules/string_decoder` | 1.3.0 | Not declared in lockfile; inspect package license file |
+| `zip-stream` | 6.0.1 | MIT (verified upstream; lockfile metadata omitted) |
+| `zip-stream/node_modules/readable-stream` | 4.5.2 | MIT (verified upstream; lockfile metadata omitted) |
+| `zip-stream/node_modules/safe-buffer` | 5.2.1 | MIT (verified upstream; lockfile metadata omitted) |
+| `zip-stream/node_modules/string_decoder` | 1.3.0 | MIT (verified upstream; lockfile metadata omitted) |
 | `zod` | 3.24.2 | MIT |
 
 ## Refreshing this inventory
 
 When dependencies change, review and regenerate this inventory from the updated `package-lock.json`. Do not infer a license from a package name alone, and retain upstream attribution and license files when redistributing source or installed dependencies.
+
+
+## Verification of license metadata omitted by package-lock
+
+The 54 paths noted above represent 40 unique package/version combinations. The table below links to the matching upstream release/license file or published package-license record used to identify its SPDX license. Some upstream packages use MIT-form text without putting `MIT` in their lockfile metadata; their license text remains the governing notice. Where Node.js component licenses include additional upstream notices, those remain applicable too.
+
+| Package and locked version | Verified SPDX identifier | License evidence |
+|---|---|---|
+| `@types/express-serve-static-core@4.19.6` | MIT | [upstream/package license](https://www.npmjs.com/package/@types/express-serve-static-core/v/4.19.6) |
+| `@types/qs@6.9.16` | MIT | [upstream/package license](https://www.npmjs.com/package/@types/qs/v/6.9.16) |
+| `@types/range-parser@1.2.7` | MIT | [upstream/package license](https://www.npmjs.com/package/@types/range-parser/v/1.2.7) |
+| `@types/sizzle@2.3.8` | MIT | [upstream/package license](https://www.npmjs.com/package/@types/sizzle/v/2.3.8) |
+| `archiver@7.0.1` | MIT | [upstream/package license](https://github.com/archiverjs/node-archiver/blob/7.0.1/LICENSE) |
+| `archiver-utils@5.0.2` | MIT | [upstream/package license](https://github.com/archiverjs/archiver-utils/blob/5.0.2/LICENSE) |
+| `readable-stream@4.5.2` | MIT | [upstream/package license](https://github.com/nodejs/readable-stream/blob/v4.5.2/LICENSE) |
+| `safe-buffer@5.2.1` | MIT | [upstream/package license](https://github.com/feross/safe-buffer/blob/v5.2.1/LICENSE) |
+| `string_decoder@1.3.0` | MIT | [upstream/package license](https://github.com/nodejs/string_decoder/blob/v1.3.0/LICENSE) |
+| `buffer-crc32@1.0.0` | MIT | [upstream/package license](https://www.npmjs.com/package/buffer-crc32/v/1.0.0) |
+| `async@3.2.5` | MIT | [upstream/package license](https://github.com/caolan/async/blob/v3.2.5/LICENSE) |
+| `b4a@1.6.6` | Apache-2.0 | [upstream/package license](https://github.com/holepunchto/b4a/blob/v1.6.6/LICENSE) |
+| `bare-events@2.2.2` | Apache-2.0 | [upstream/package license](https://github.com/holepunchto/bare-events/blob/v2.2.2/LICENSE) |
+| `base-64@0.1.0` | MIT | [upstream/package license](https://github.com/mathiasbynens/base64/blob/master/LICENSE-MIT.txt) |
+| `busboy@1.6.0` | MIT | [upstream/package license](https://github.com/mscdex/busboy/blob/v1.6.0/LICENSE) |
+| `compress-commons@6.0.2` | MIT | [upstream/package license](https://github.com/archiverjs/node-compress-commons/blob/6.0.2/LICENSE) |
+| `crc-32@1.2.2` | Apache-2.0 | [upstream/package license](https://www.npmjs.com/package/crc-32/v/1.2.2) |
+| `debug@3.2.7` | MIT | [upstream/package license](https://github.com/debug-js/debug/blob/3.2.7/LICENSE) |
+| `ms@2.1.3` | MIT | [upstream/package license](https://github.com/vercel/ms/blob/2.1.3/license.md) |
+| `cookies@0.9.1` | MIT | [upstream/package license](https://github.com/pillarjs/cookies/blob/0.9.1/LICENSE) |
+| `crc32-stream@6.0.0` | MIT | [upstream/package license](https://github.com/archiverjs/node-crc32-stream/blob/6.0.0/LICENSE) |
+| `dom-walk@0.1.2` | MIT | [upstream/package license](https://www.skypack.dev/view/dom-walk) |
+| `droll@0.2.1` | MIT | [upstream/package license](https://github.com/thebinarypenguin/droll/blob/master/LICENSE) |
+| `events@3.3.0` | MIT | [upstream/package license](https://github.com/browserify/events/blob/v3.3.0/LICENSE) |
+| `exif-parser@0.1.12` | MIT | [upstream/package license](https://github.com/bwindels/exif-parser/blob/master/LICENSE.md) |
+| `fast-fifo@1.3.2` | MIT | [upstream/package license](https://github.com/mafintosh/fast-fifo/blob/v1.3.2/LICENSE) |
+| `foreground-child@3.1.1` | ISC | [upstream/package license](https://www.npmjs.com/package/foreground-child/v/3.1.1) |
+| `graceful-fs@4.2.11` | ISC | [upstream/package license](https://github.com/isaacs/node-graceful-fs/blob/v4.2.11/LICENSE) |
+| `is-stream@2.0.1` | MIT | [upstream/package license](https://github.com/sindresorhus/is-stream/blob/v2.0.1/license) |
+| `keygrip@1.1.0` | MIT | [upstream/package license](https://github.com/crypto-utils/keygrip/blob/1.1.0/LICENSE) |
+| `lazystream@1.0.1` | MIT | [upstream/package license](https://github.com/jpommerening/node-lazystream/blob/1.0.1/LICENSE) |
+| `normalize-path@3.0.0` | MIT | [upstream/package license](https://github.com/jonschlinkert/normalize-path/blob/3.0.0/LICENSE) |
+| `queue-tick@1.0.1` | MIT | [upstream/package license](https://github.com/mafintosh/queue-tick/blob/v1.0.1/LICENSE) |
+| `readdir-glob@1.1.3` | Apache-2.0 | [upstream/package license](https://gitea.psi.ch/actions/upload-artifact/src/commit/98d3bf521e08c47b6291934132f5d301e4ff2dd6/.licenses/npm/readdir-glob.dep.yml) |
+| `streamsearch@1.1.0` | MIT | [upstream/package license](https://github.com/mscdex/streamsearch/blob/v1.1.0/LICENSE) |
+| `streamx@2.16.1` | MIT | [upstream/package license](https://github.com/mafintosh/streamx/blob/v2.16.1/LICENSE) |
+| `tar-stream@3.1.7` | MIT | [upstream/package license](https://github.com/mafintosh/tar-stream/blob/v3.1.7/LICENSE) |
+| `tsscmp@1.0.6` | MIT | [upstream/package license](https://www.npmjs.com/package/tsscmp/v/1.0.6) |
+| `uuid@9.0.1` | MIT | [upstream/package license](https://github.com/uuidjs/uuid/blob/v9.0.1/LICENSE.md) |
+| `zip-stream@6.0.1` | MIT | [upstream/package license](https://github.com/archiverjs/node-zip-stream/blob/6.0.1/LICENSE) |
