@@ -295,6 +295,17 @@ export class MemoryStore {
      * @param {object} input Event fields.
      * @returns {object} Stored event.
      */
+    #checkpointAfterPurge() {
+        try {
+            const result = this.#db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
+            if (result?.busy) {
+                console.warn('[SillyAgent storage] SQLite WAL checkpoint remains busy after a privacy purge.');
+            }
+        } catch (error) {
+            console.warn('[SillyAgent storage] SQLite WAL checkpoint after privacy purge failed:', error?.message || error);
+        }
+    }
+
     recordEvent({ scope, scopeId, eventType, content, metadata, createdAt = Date.now() }) {
         const target = normalizeScope(scope, scopeId);
         const text = normalizeText(content, MAX_EVENT_CONTENT, 'Event content');
@@ -1043,6 +1054,7 @@ export class MemoryStore {
             this.#db.prepare('DELETE FROM memory_events WHERE scope = ? AND scope_id = ?')
                 .run(target.scope, target.scopeId);
             this.#db.exec('COMMIT;');
+            this.#checkpointAfterPurge();
             return {
                 deletedMemories,
                 deletedProposals,
@@ -1127,6 +1139,7 @@ export class MemoryStore {
             this.#db.prepare('DELETE FROM memory_events WHERE scope = ? AND scope_id = ?')
                 .run(target.scope, target.scopeId);
             this.#db.exec('COMMIT;');
+            this.#checkpointAfterPurge();
             return { clearedTurns, deletedMemories, deletedProposals, cancelledJobs };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
@@ -1164,6 +1177,7 @@ export class MemoryStore {
                 metadata: { deletedTurns: count },
             });
             this.#db.exec('COMMIT;');
+            this.#checkpointAfterPurge();
             return count;
         } catch (error) {
             this.#db.exec('ROLLBACK;');
@@ -1279,6 +1293,7 @@ export class MemoryStore {
             const row = this.#db.prepare('SELECT * FROM memories WHERE id = ?').get(memoryId);
             if (!row) {
                 this.#db.exec('COMMIT;');
+            this.#checkpointAfterPurge();
                 return false;
             }
 
@@ -1342,6 +1357,7 @@ export class MemoryStore {
                 },
             });
             this.#db.exec('COMMIT;');
+            this.#checkpointAfterPurge();
             return true;
         } catch (error) {
             this.#db.exec('ROLLBACK;');
