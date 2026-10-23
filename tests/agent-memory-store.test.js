@@ -764,6 +764,46 @@ describe('MemoryStore', () => {
         expect(rows[0].metadata.characterId).toBe('julia.png');
     });
 
+    test('deleted chat tombstones reject every direct memory write path', async () => {
+        const store = await createMemoryStore();
+        const scopeId = 'deleted-chat-write-guards';
+        store.deleteChatPartition(scopeId);
+
+        expect(() => store.recordEvent({
+            scope: 'chat',
+            scopeId,
+            eventType: 'memory.test_event',
+            content: 'A late tool write must not recreate this partition.',
+        })).toThrow(/chat partition was deleted/i);
+
+        expect(store.proposeMemory({
+            scope: 'chat',
+            scopeId,
+            kind: 'fact',
+            content: 'A late tool memory must not be accepted.',
+        })).toMatchObject({
+            memory: null,
+            duplicate: false,
+            deleted: true,
+        });
+
+        expect(store.enqueueReflectionJob({
+            scopeId,
+            chatId: 'deleted-chat-write-guards',
+            mode: 'extract',
+            triggerEventId: 'late-trigger-event',
+            triggerCount: 1,
+        })).toMatchObject({
+            job: null,
+            created: false,
+            deleted: true,
+        });
+
+        expect(store.countCapturedTurns(scopeId)).toBe(0);
+        expect(store.listMemories({ scope: 'chat', scopeId })).toHaveLength(0);
+        expect(store.listProposals({ scope: 'chat', scopeId })).toHaveLength(0);
+    });
+
     test('rejects late captures after deletion until a chat lifecycle reactivates the partition', async () => {
         const store = await createMemoryStore();
         const first = store.captureTurn({
