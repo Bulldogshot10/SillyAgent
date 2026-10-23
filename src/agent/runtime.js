@@ -112,11 +112,6 @@ export async function deleteAgentCharacterPartitionsIfPresent(input, characterId
         ));
     }
 
-    const memoryDatabasePath = path.join(root, 'sillyagent', 'memory.sqlite');
-    const stateDatabasePath = path.join(root, 'sillyagent', 'roleplay-state.sqlite');
-    const skillPartition = createHash('sha256').update(normalizedCharacterId, 'utf8').digest('hex');
-    const skillDatabasePath = path.join(root, 'sillyagent', 'skills', skillPartition + '.sqlite');
-
     // Create all three lifecycle guards even when a store did not exist yet.
     // This closes the race where a stale request opens a fresh DB after deletion.
     const memoryStore = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
