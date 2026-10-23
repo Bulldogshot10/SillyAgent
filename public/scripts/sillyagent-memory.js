@@ -323,6 +323,42 @@ async function saveReflectionProvider(runtime) {
     }
 }
 
+async function testReflectionProvider(runtime) {
+    const button = document.getElementById('sa_reflection_test');
+    const resultNode = document.getElementById('sa_reflection_test_result');
+    if (button) button.disabled = true;
+    if (resultNode) {
+        resultNode.textContent = 'Testing the current endpoint and model…';
+        resultNode.classList.remove('error', 'success');
+    }
+    try {
+        const result = await requestApi(runtime, '/memory/reflection-provider/test', {
+            method: 'POST',
+            body: JSON.stringify({
+                endpoint: document.getElementById('sa_reflection_endpoint')?.value || '',
+                model: document.getElementById('sa_reflection_model')?.value || '',
+                secretKey: document.getElementById('sa_reflection_secret_key')?.value || 'none',
+            }),
+        });
+        const details = typeof result.response === 'string' && result.response.trim()
+            ? ' Provider reply: ' + result.response.trim()
+            : '';
+        if (resultNode) {
+            resultNode.textContent = 'Connection succeeded for ' + result.model + '.' + details;
+            resultNode.classList.add('success');
+        }
+        setStatus('Reflection endpoint test succeeded.');
+    } catch (error) {
+        if (resultNode) {
+            resultNode.textContent = error.message || 'Reflection provider connection test failed.';
+            resultNode.classList.add('error');
+        }
+        setStatus(error.message || 'Reflection provider connection test failed.', true);
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
 async function clearCapturedHistory(runtime) {
     const ids = contextIds(runtime);
     if (!ids.activeChatId) {
@@ -373,6 +409,7 @@ export function initSillyAgentMemory(runtime) {
     document.getElementById('sa_memory_clear_captured')?.addEventListener('click', () => void clearCapturedHistory(runtime));
     document.getElementById('sa_memory_search')?.addEventListener('input', () => void refreshPanel(runtime));
     document.getElementById('sa_reflection_save')?.addEventListener('click', () => void saveReflectionProvider(runtime));
+    document.getElementById('sa_reflection_test')?.addEventListener('click', () => void testReflectionProvider(runtime));
 
     // This request initializes the per-user SQLite store and resumes queued
     // work after a server restart; the backend worker itself is server-owned.
