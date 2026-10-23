@@ -613,8 +613,8 @@ router.post('/memory/reflection-provider/test', async (request, response) => {
             matched: providerResponse.includes('SILLYAGENT_REFLECTION_OK'),
         });
     } catch (error) {
-        const invalidConfiguration = error instanceof TypeError
-            || /selected SillyTavern secret is not configured/iu.test(error?.message || '');
+        const message = error?.message || '';
+        const invalidConfiguration = /Reflection provider settings must be an object|Reflection endpoint must be|Reflection model must be|Unsupported reflection credential key|Configure both the reflection endpoint and model|A user data directory is required|selected SillyTavern secret is not configured/iu.test(message);
         return response.status(invalidConfiguration ? 400 : 502).json({
             ok: false,
             error: {
