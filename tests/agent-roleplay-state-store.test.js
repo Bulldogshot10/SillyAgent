@@ -215,6 +215,34 @@ describe('RoleplayStateStore', () => {
             .toEqual({ summary: 'This chat scene remains independently managed.' });
     });
 
+    test('rejects character-state writes after deletion until that character is recreated', async () => {
+        store = await RoleplayStateStore.open(':memory:');
+        store.updateState({
+            stateType: 'character',
+            scopeId: 'julia.png',
+            patch: { condition: 'injured' },
+            expectedVersion: 0,
+        });
+        store.deleteCharacterPartition('julia.png');
+
+        expect(() => store.updateState({
+            stateType: 'character',
+            scopeId: 'julia.png',
+            patch: { condition: 'resurrected by late tool' },
+            expectedVersion: 0,
+        })).toThrow(expect.objectContaining({ code: 'state_conflict' }));
+        expect(store.getState({ stateType: 'character', scopeId: 'julia.png' }))
+            .toMatchObject({ version: 0, state: {} });
+
+        expect(store.activateCharacterPartition('julia.png')).toEqual({ activated: true });
+        expect(store.updateState({
+            stateType: 'character',
+            scopeId: 'julia.png',
+            patch: { condition: 'newly created character' },
+            expectedVersion: 0,
+        }).state).toEqual({ condition: 'newly created character' });
+    });
+
     test('requires an expected version at the persistent state write boundary', async () => {
         store = await RoleplayStateStore.open(':memory:');
 
