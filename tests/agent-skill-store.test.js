@@ -164,4 +164,23 @@ describe('SkillStore', () => {
         expect(skills.getEvents()).toHaveLength(0);
     });
 
+    test('blocks skill writes after clearAll until the owning character is recreated', async () => {
+        const skills = await createStore();
+        skills.proposeSkill(originalSkill);
+        skills.clearAll();
+
+        let error;
+        try {
+            skills.proposeSkill(originalSkill);
+        } catch (caught) {
+            error = caught;
+        }
+        expect(error).toMatchObject({ code: 'character_partition_deleted' });
+        expect(skills.listSkills()).toHaveLength(0);
+
+        expect(skills.activateCharacterPartition()).toEqual({ activated: true });
+        expect(skills.proposeSkill(originalSkill).revision.status).toBe('active');
+        expect(skills.readSkill('api-debugging')).not.toBeNull();
+    });
+
 });
