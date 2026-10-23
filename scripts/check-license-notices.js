@@ -37,6 +37,7 @@ requireText('README.md', '[NOTICE](NOTICE)', 'README must link to NOTICE');
 requireText('README.md', '[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)', 'README must link to third-party notices');
 requireText('README.md', 'docs/fork-changes.md', 'README must link to the fork change inventory');
 requireText('public/index.html', 'id="sillyagent-license-notice"', 'the application UI must expose its legal notice');
+requireRegex('public/index.html', /href="https:\/\/github\.com\/Bulldogshot10\/SillyAgent\/archive\/refs\/heads\/[^"]+\.zip"[^>]*>Download source code \(ZIP\)<\/a>/, 'the UI must offer a direct free source ZIP download');
 requireText('public/index.html', 'may be conveyed under those terms', 'the UI must explain the permission to convey the work under AGPL-3.0');
 requireText('public/index.html', 'without warranty', 'the UI must state the no-warranty notice');
 requireText('public/index.html', 'AGPL-3.0 license', 'the UI must link to the license');
