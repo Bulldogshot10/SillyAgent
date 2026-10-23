@@ -430,7 +430,7 @@ export class SkillStore {
         try {
             this.#assertCharacterActive();
             const revision = this.#db.prepare(
-                'SELECT * FROM skill_revisions WHERE slug = ? AND version = \'pending\'',
+                'SELECT * FROM skill_revisions WHERE slug = ? AND version = ? AND status = \'pending\'',
             ).get(normalizedSlug, version);
             if (!revision) {
                 this.#db.exec('COMMIT;');
