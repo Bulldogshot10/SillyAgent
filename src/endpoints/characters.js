@@ -22,7 +22,7 @@ import { invalidateThumbnail } from './thumbnails.js';
 import { importRisuSprites } from './sprites.js';
 import { getUserDirectories } from '../users.js';
 import { getChatInfo } from './chats.js';
-import { deleteAgentCharacterPartitionsIfPresent } from '../agent/runtime.js';
+import { beginAgentCharacterDeletion, deleteAgentCharacterPartitionsIfPresent, endAgentCharacterDeletion } from '../agent/runtime.js';
 import { ByafParser } from '../byaf.js';
 import { CharXParser, persistCharXAssets } from '../charx.js';
 import cacheBuster from '../middleware/cacheBuster.js';
@@ -1436,46 +1436,52 @@ router.post('/delete', validateAvatarUrlMiddleware, async function (request, res
         return response.sendStatus(403);
     }
 
-    const chatDirectory = path.join(request.user.directories.chats, sanitize(dir_name));
-    let chatIds = [];
+    const deletionDirectories = request.user.directories;
+    beginAgentCharacterDeletion(deletionDirectories, characterId);
     try {
-        const entries = await fs.promises.readdir(chatDirectory, { withFileTypes: true }).catch(error => {
-            if (error?.code === 'ENOENT') return [];
-            throw error;
-        });
-        chatIds = entries
-            .filter(entry => entry.isFile() && path.extname(entry.name).toLowerCase() === '.jsonl')
-            .map(entry => path.basename(entry.name, path.extname(entry.name)));
-
-        // Purge harness data before removing its owner. If cleanup fails, leave
-        // the character file and chat files intact so the operation can be retried.
-        await deleteAgentCharacterPartitionsIfPresent(request.user.directories, characterId, chatIds);
-    } catch (error) {
-        console.error('[SillyAgent character cleanup]', error);
-        return response.status(503).json({
-            error: true,
-            code: 'agent_character_cleanup_failed',
-            message: 'SillyAgent could not safely clear this character’s stored data. The character was not deleted.',
-        });
-    }
-
-    if (request.body.delete_chats == true) {
+        const chatDirectory = path.join(deletionDirectories.chats, sanitize(dir_name));
+        let chatIds = [];
         try {
-            await fs.promises.rm(chatDirectory, { recursive: true, force: true });
+            const entries = await fs.promises.readdir(chatDirectory, { withFileTypes: true }).catch(error => {
+                if (error?.code === 'ENOENT') return [];
+                throw error;
+            });
+            chatIds = entries
+                .filter(entry => entry.isFile() && path.extname(entry.name).toLowerCase() === '.jsonl')
+                .map(entry => path.basename(entry.name, path.extname(entry.name)));
+
+            // Purge harness data before removing its owner. If cleanup fails, leave
+            // the character file and chat files intact so the operation can be retried.
+            await deleteAgentCharacterPartitionsIfPresent(deletionDirectories, characterId, chatIds);
+        } catch (error) {
+            console.error('[SillyAgent character cleanup]', error);
+            return response.status(503).json({
+                error: true,
+                code: 'agent_character_cleanup_failed',
+                message: 'SillyAgent could not safely clear this character’s stored data. The character was not deleted.',
+            });
+        }
+
+        if (request.body.delete_chats == true) {
+            try {
+                await fs.promises.rm(chatDirectory, { recursive: true, force: true });
+            } catch (error) {
+                console.error(error);
+                return response.sendStatus(500);
+            }
+        }
+
+        try {
+            await fs.promises.unlink(avatarPath);
         } catch (error) {
             console.error(error);
             return response.sendStatus(500);
         }
+        invalidateThumbnail(deletionDirectories, 'avatar', characterId);
+        return response.sendStatus(200);
+    } finally {
+        endAgentCharacterDeletion(deletionDirectories, characterId);
     }
-
-    try {
-        await fs.promises.unlink(avatarPath);
-    } catch (error) {
-        console.error(error);
-        return response.sendStatus(500);
-    }
-    invalidateThumbnail(request.user.directories, 'avatar', characterId);
-    return response.sendStatus(200);
 });
 
 /**
