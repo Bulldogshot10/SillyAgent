@@ -69,13 +69,23 @@ The startup script installs production dependencies and launches the server. Ope
 
 ## Background reflection setup
 
-Background reflection is disabled by default. To enable it, configure an OpenAI-compatible `/chat/completions` endpoint, model identifier, and a credential reference in:
+Background reflection is disabled by default. Configure it directly in SillyAgent's WebUI:
+
+1. Open the **SillyAgent Agent Core** drawer using the brain icon.
+2. Under **Background reflection and self-improvement**, enter your OpenAI-compatible chat-completions endpoint and exact model ID.
+3. Choose the credential slot from **SillyTavern Secrets**. Add and activate the API key in SillyTavern's Secrets manager first; the selector stores only the secret key identifier, not the raw API key.
+4. Press **Test connection** to send a short request to the draft endpoint and model. This test does not save the draft or enable the worker.
+5. Enable **Enable autonomous background reflection**, then press **Save background worker settings**.
+
+The status text reports whether the endpoint/model are configured and whether the selected credential has an active secret. Non-loopback endpoints must use HTTPS; plain HTTP is accepted only for localhost/loopback services.
+
+For headless/manual setup, the configuration is stored at:
 
 ```text
 <SillyTavern data root>/sillyagent/reflection-provider.json
 ```
 
-The credential field refers to a secret already stored in SillyTavern's secret manager. **Do not paste the raw API key into the reflection configuration file.** The [installation guide](docs/installation.md#configuring-background-reflection) documents the settings and network requirements.
+The `secretKey` field refers to a secret already stored in SillyTavern's secret manager. **Do not paste the raw API key into this JSON file.** See the [installation guide](docs/installation.md#configuring-background-reflection) for the full WebUI flow, endpoint details, and troubleshooting.
 
 ## Project status
 
