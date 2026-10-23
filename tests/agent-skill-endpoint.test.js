@@ -44,11 +44,26 @@ beforeAll(async () => {
     process.env[memoryProposalsEnvKey] = 'true';
     process.env[skillWritesEnvKey] = 'true';
     userRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sillyagent-skills-endpoint-'));
+    const charactersDirectory = path.join(userRoot, 'characters');
+    const chatsDirectory = path.join(userRoot, 'chats');
+    const groupChatsDirectory = path.join(userRoot, 'groupChats');
+    await Promise.all([
+        fs.mkdir(charactersDirectory, { recursive: true }),
+        fs.mkdir(chatsDirectory, { recursive: true }),
+        fs.mkdir(groupChatsDirectory, { recursive: true }),
+    ]);
+    await fs.writeFile(path.join(charactersDirectory, 'julia-card.png'), 'test character');
+    const userDirectories = {
+        root: userRoot,
+        characters: charactersDirectory,
+        chats: chatsDirectory,
+        groupChats: groupChatsDirectory,
+    };
 
     const app = express();
     app.use(express.json());
     app.use((request, _response, next) => {
-        request.user = { directories: { root: userRoot } };
+        request.user = { directories: userDirectories };
         next();
     });
     app.use('/api/agent/tools', router);
