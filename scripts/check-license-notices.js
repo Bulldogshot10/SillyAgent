@@ -86,8 +86,11 @@ if (legalNoticePosition < 0 || firstOptionPosition < 0 || legalNoticePosition > 
     failures.push('public/index.html: the AGPL/source notice must appear before the first menu option');
 }
 
-const evidenceRows = thirdParty.split('\\n').filter(line =>
-    /^\\| `[^\\`]+@\\S+` \\| (?:MIT|ISC|Apache-2\\.0|BSD-[0-9]-Clause) \\| \\[upstream\\/package license\\]\\(https?:\\/\\//.test(line));
+const evidenceRows = thirdParty.split('\n').filter(line =>
+    line.startsWith('| `') &&
+    line.includes('upstream/package license](') &&
+    line.endsWith('|') &&
+    ['MIT', 'ISC', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause'].some(identifier => line.includes(`| ${identifier} |`)));
 if (evidenceRows.length < 40) {
     failures.push('THIRD_PARTY_NOTICES.md: expected evidence links for all 40 unique packages with omitted license metadata');
 }
