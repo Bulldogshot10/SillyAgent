@@ -4435,6 +4435,12 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
     // assemble the prompt so we can count its tokens regardless of whether a chat is active.)
     if (!dryRun && !hasBackendConnection) {
         is_send_press = false;
+        unblockGeneration(type);
+        toastr.error(
+            t`No active backend connection. Check the selected provider, API key, and model, then reconnect.`,
+            t`Generation skipped`,
+            { timeOut: 10000, preventDuplicates: true },
+        );
         return Promise.resolve();
     }
 
@@ -5608,13 +5614,27 @@ async function generateStep(type, { automatic_trigger, force_name2, quiet_prompt
      * @throws {Error|object} Re-throws the exception
      */
     function onError(exception) {
-        // if the response JSON was thrown (novel|textgenerationwebui|kobold), show the error message
-        if (typeof exception?.error?.message === 'string') {
-            toastr.error(exception.error.message, t`Text generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
+        const message = typeof exception?.error?.message === 'string'
+            ? exception.error.message
+            : typeof exception?.message === 'string'
+                ? exception.message
+                : typeof exception?.response === 'string'
+                    ? exception.response
+                    : typeof exception === 'string' ? exception : '';
+        const wasAborted = abortController?.signal?.aborted === true || exception?.name === 'AbortError';
+        if (message && message !== '[object Object]' && !wasAborted && exception?.sillyAgentErrorNotified !== true) {
+            toastr.error(message.slice(0, 800), t`Text generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
+            if (exception && (typeof exception === 'object' || typeof exception === 'function')) {
+                try {
+                    exception.sillyAgentErrorNotified = true;
+                } catch {
+                    // Some provider errors may be frozen objects.
+                }
+            }
         }
 
         unblockGeneration(type);
-        console.log(exception);
+        console.error('[SillyAgent generation] Provider/generation failed:', exception);
         streamingProcessor = null;
         throw exception;
     }
@@ -5750,6 +5770,20 @@ export async function Generate(type, options = {}, dryRun = false) {
                 dryRun,
             ),
         });
+    } catch (error) {
+        const message = typeof error?.message === 'string' ? error.message : String(error || 'Unknown SillyAgent generation error.');
+        if (!turnAbortController.signal.aborted && error?.sillyAgentErrorNotified !== true && message && message !== '[object Object]') {
+            toastr.error(message.slice(0, 800), t`SillyAgent generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
+            if (error && (typeof error === 'object' || typeof error === 'function')) {
+                try {
+                    error.sillyAgentErrorNotified = true;
+                } catch {
+                    // Preserve the original generation error if it cannot be annotated.
+                }
+            }
+        }
+        console.error('[SillyAgent generation] Harness turn failed:', error);
+        throw error;
     } finally {
         externalSignal?.removeEventListener?.('abort', forwardExternalAbort);
     }
