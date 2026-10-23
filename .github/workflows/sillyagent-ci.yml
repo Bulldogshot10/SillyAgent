@@ -3,6 +3,7 @@ name: SillyAgent CI
 on:
   push:
     branches:
+      - main
       - release
       - 'feat/**'
   pull_request:
