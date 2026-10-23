@@ -53,6 +53,7 @@ The startup script installs production dependencies and starts the server. Open 
 
 - [Full installation guide](docs/installation.md), including Android Termux.
 - [SillyAgent architecture and execution flow](docs/sillyagent-architecture.md).
+- [Fork change inventory](docs/fork-changes.md): modification summary and principal changed paths.
 - [Documentation index](docs/README.md).
 
 ## Background reflection setup
@@ -79,4 +80,4 @@ Report fork-specific issues in this repository. For behavior that also occurs on
 
 ## License and third-party notices
 
-This fork retains the repository's **GNU Affero General Public License v3.0 (AGPL-3.0)**. See [LICENSE](LICENSE), [NOTICE](NOTICE), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The third-party notice includes the dependency inventory generated from the checked-in `package-lock.json`; each dependency's own license file remains authoritative for its exact terms.
+This fork retains the repository's **GNU Affero General Public License v3.0 (AGPL-3.0)**. See [LICENSE](LICENSE), [NOTICE](NOTICE), [Fork change inventory](docs/fork-changes.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The third-party notice includes the dependency inventory generated from the checked-in `package-lock.json`; each dependency's own license file remains authoritative for its exact terms.
