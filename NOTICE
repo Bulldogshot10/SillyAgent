@@ -53,4 +53,6 @@ SillyTavern and its contributors retain the copyright in their original contribu
 
 This is an independent fork. It is not an official SillyTavern release and is not affiliated with or endorsed by the upstream SillyTavern project.
 
+Users interacting with the running application can access the corresponding source code at no charge through the "Source code" link in the application's options menu. The link points to the public repository for the applicable development branch.
+
 Third-party runtime and development packages are inventoried in THIRD_PARTY_NOTICES.md from package-lock.json. That inventory is an index, not a substitute for each package's own license text and notices. Check the relevant package's source distribution for its full licensing terms.
