@@ -11,6 +11,65 @@ const memoryStores = new Map();
 const skillStores = new Map();
 const roleplayStateStores = new Map();
 const workerHandles = new Map();
+const deletingPartitions = new Map();
+
+function partitionLockKey(root, kind, id) {
+    return path.resolve(root) + '\0' + kind + '\0' + id;
+}
+
+function beginDeletion(key) {
+    deletingPartitions.set(key, (deletingPartitions.get(key) ?? 0) + 1);
+}
+
+function endDeletion(key) {
+    const count = deletingPartitions.get(key) ?? 0;
+    if (count <= 1) deletingPartitions.delete(key);
+    else deletingPartitions.set(key, count - 1);
+}
+
+export function beginAgentChatDeletion(input, chatId, characterId = null) {
+    const { root } = normalizeDirectories(input);
+    const scopeId = getAgentScopedChatId(chatId, characterId);
+    if (!scopeId) throw new TypeError('A valid chat ID is required to lock SillyAgent chat deletion.');
+    const key = partitionLockKey(root, 'chat', scopeId);
+    beginDeletion(key);
+    return key;
+}
+
+export function endAgentChatDeletion(input, chatId, characterId = null) {
+    const { root } = normalizeDirectories(input);
+    const scopeId = getAgentScopedChatId(chatId, characterId);
+    if (!scopeId) return;
+    endDeletion(partitionLockKey(root, 'chat', scopeId));
+}
+
+export function isAgentChatDeletionInProgress(input, chatId, characterId = null) {
+    const { root } = normalizeDirectories(input);
+    const scopeId = getAgentScopedChatId(chatId, characterId);
+    return Boolean(scopeId && deletingPartitions.has(partitionLockKey(root, 'chat', scopeId)));
+}
+
+export function beginAgentCharacterDeletion(input, characterId) {
+    const { root } = normalizeDirectories(input);
+    if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) {
+        throw new TypeError('A valid character ID is required to lock SillyAgent character deletion.');
+    }
+    const key = partitionLockKey(root, 'character', characterId.trim());
+    beginDeletion(key);
+    return key;
+}
+
+export function endAgentCharacterDeletion(input, characterId) {
+    const { root } = normalizeDirectories(input);
+    if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) return;
+    endDeletion(partitionLockKey(root, 'character', characterId.trim()));
+}
+
+export function isAgentCharacterDeletionInProgress(input, characterId) {
+    const { root } = normalizeDirectories(input);
+    if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) return false;
+    return deletingPartitions.has(partitionLockKey(root, 'character', characterId.trim()));
+}
 
 function normalizeDirectories(input) {
     const directories = typeof input === 'string' ? { root: input } : input;
@@ -172,6 +231,40 @@ export async function getAgentRoleplayStateStore(input) {
         opening.catch(() => roleplayStateStores.delete(databasePath));
     }
     return await roleplayStateStores.get(databasePath);
+}
+
+/**
+ * Clear character tombstones for existing stores after the core has verified
+ * that the source character file still exists.
+ * @param {string|object} input User directories.
+ * @param {string} characterId Character avatar identifier.
+ * @returns {Promise<object>} Reactivation results for stores that exist.
+ */
+export async function activateAgentCharacterPartitionsIfPresent(input, characterId) {
+    const { directories, root } = normalizeDirectories(input);
+    if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) {
+        throw new TypeError('A valid character ID is required to activate SillyAgent character data.');
+    }
+    const normalizedCharacterId = characterId.trim();
+    const memoryDatabasePath = path.join(root, 'sillyagent', 'memory.sqlite');
+    const stateDatabasePath = path.join(root, 'sillyagent', 'roleplay-state.sqlite');
+    const skillPartition = createHash('sha256').update(normalizedCharacterId, 'utf8').digest('hex');
+    const skillDatabasePath = path.join(root, 'sillyagent', 'skills', skillPartition + '.sqlite');
+
+    const result = {};
+    if (memoryStores.has(memoryDatabasePath) || existsSync(memoryDatabasePath)) {
+        const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
+        result.memory = store.activateCharacterPartition(normalizedCharacterId);
+    }
+    if (roleplayStateStores.has(stateDatabasePath) || existsSync(stateDatabasePath)) {
+        const store = await getAgentRoleplayStateStore({ ...directories, root });
+        result.roleplayState = store.activateCharacterPartition(normalizedCharacterId);
+    }
+    if (skillStores.has(skillDatabasePath) || existsSync(skillDatabasePath)) {
+        const store = await getAgentSkillStore({ ...directories, root }, normalizedCharacterId);
+        result.skills = store.activateCharacterPartition();
+    }
+    return result;
 }
 
 /**
