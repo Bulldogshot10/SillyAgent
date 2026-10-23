@@ -1,19 +1,56 @@
-SillyAgent project notice
-=========================
+SillyAgent fork and modification notice
+=======================================
 
-SillyAgent is a community-maintained fork of SillyTavern.
+Modification notice date: 2026-10-23
+License: GNU Affero General Public License, version 3 (AGPL-3.0). See LICENSE.
 
-Upstream project:
-  SillyTavern
-  https://github.com/SillyTavern/SillyTavern
-  https://docs.sillytavern.app/
+SillyAgent is a modified, community-maintained fork of SillyTavern:
+  Upstream repository: https://github.com/SillyTavern/SillyTavern
+  Upstream documentation: https://docs.sillytavern.app/
 
-This repository retains and modifies upstream SillyTavern code and adds the SillyAgent native, core-integrated runtime. Copyright in upstream contributions remains with their respective holders. Copyright and license notices already present in upstream files are intended to remain intact; this notice supplements those notices and does not replace them.
+This repository retains and modifies upstream SillyTavern code and adds the SillyAgent native, core-integrated agent harness. The changes listed here describe the SillyAgent fork as of the modification notice date above; later commits may introduce further modifications.
 
-License for this repository:
-  GNU Affero General Public License, version 3 (AGPL-3.0)
-  See the accompanying LICENSE file.
+Major fork-specific changes
+--------------------------
+
+1. Native agent harness and tool execution
+   - Adds a native backend tool endpoint at /api/agent/tools.
+   - Adds a tool registry, tool schemas, toolset and write-permission validation, and a bounded agent tool-call runner.
+   - Integrates structured tool calling with the existing SillyTavern generation and conversation flow rather than requiring a browser extension.
+
+2. Persistent memory and automatic capture
+   - Adds SQLite-backed event, memory, proposal, and scoped retrieval storage.
+   - Integrates user and assistant turn capture with internal SillyTavern lifecycle events, including deduplication and character/chat scoping.
+   - Adds deletion and lifecycle guards intended to prevent stale asynchronous requests from silently recreating deleted chat or character data.
+
+3. Background reflection and procedural skills
+   - Adds an optional backend reflection worker and provider configuration for an OpenAI-compatible chat-completions endpoint.
+   - Adds validation of structured memory/skill candidates and persistent character-scoped procedural skill storage and tools.
+   - Reflection is queued by internal events; it requires a configured and enabled provider to run.
+
+4. Roleplay state and built-in tools
+   - Adds persistent world, character, and scene state; scene advancement; lore search; and dice tools.
+   - Adds native handlers and validation for these tool families.
+
+5. SillyTavern integration and user-facing changes
+   - Modifies core startup, server routing, prompt conversion, chat/character lifecycle, and supported generation/tool-calling paths to connect the runtime.
+   - Adds and modifies browser UI scripts, styles, and HTML for the SillyAgent integration.
+   - Updates default configuration and package metadata where needed by the fork.
+
+6. Tests, workflow, and documentation
+   - Adds SillyAgent-specific unit and integration tests.
+   - Adds a SillyAgent CI workflow.
+   - Adds architecture, installation (including Android Termux), harness, memory/reflection, and procedural-skill documentation.
+   - Adds a third-party dependency license inventory in THIRD_PARTY_NOTICES.md.
+
+For a more detailed path-level inventory of the SillyAgent implementation, see:
+  docs/fork-changes.md
+
+Upstream authorship and notices
+-------------------------------
+
+SillyTavern and its contributors retain the copyright in their original contributions. Existing copyright, license, attribution, warranty, and other notices in upstream files are intended to remain intact. This notice supplements those notices; it does not replace them or claim ownership of upstream work.
 
 This is an independent fork. It is not an official SillyTavern release and is not affiliated with or endorsed by the upstream SillyTavern project.
 
-Third-party runtime and development packages are enumerated in THIRD_PARTY_NOTICES.md from package-lock.json. Refer to each package's own license text and source distribution for its complete licensing terms.
+Third-party runtime and development packages are inventoried in THIRD_PARTY_NOTICES.md from package-lock.json. That inventory is an index, not a substitute for each package's own license text and notices. Check the relevant package's source distribution for its full licensing terms.
