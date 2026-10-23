@@ -1,6 +1,6 @@
 # Installation Guide
 
-SillyAgent is distributed as a modified SillyTavern repository. Clone this repository and the `feat/sillyagent-core` branch to get the integrated core changes. Installing upstream SillyTavern from its own repository will not install the SillyAgent changes documented here.
+SillyAgent is distributed as a modified SillyTavern repository. Clone this repository's `main` branch to get the integrated core changes. Cloning upstream SillyTavern directly will not include the SillyAgent changes documented here.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ git --version
 ## Linux and macOS
 
 ```sh
-git clone --single-branch --branch feat/sillyagent-core https://github.com/Bulldogshot10/SillyAgent.git
+git clone --single-branch --branch main https://github.com/Bulldogshot10/SillyAgent.git
 cd SillyAgent
 bash start.sh
 ```
@@ -31,10 +31,10 @@ If you prefer to manage dependencies manually, run `npm install --no-audit --no-
 
 ## Windows
 
-Install Git and Node.js 20 or newer, then clone the same branch:
+Install Git and Node.js 20 or newer, then clone the `main` branch:
 
 ```powershell
-git clone --single-branch --branch feat/sillyagent-core https://github.com/Bulldogshot10/SillyAgent.git
+git clone --single-branch --branch main https://github.com/Bulldogshot10/SillyAgent.git
 cd SillyAgent
 ```
 
@@ -78,7 +78,7 @@ pkg install esbuild
 
 ```sh
 cd ~
-git clone --single-branch --branch feat/sillyagent-core https://github.com/Bulldogshot10/SillyAgent.git
+git clone --single-branch --branch main https://github.com/Bulldogshot10/SillyAgent.git
 cd SillyAgent
 ```
 
@@ -116,11 +116,11 @@ Before updating, back up your user data and make sure any local source changes a
 ```sh
 git status
 git fetch origin
-git pull --ff-only origin feat/sillyagent-core
+git pull --ff-only origin main
 bash start.sh
 ```
 
-The branch is under active development and may change frequently. Avoid copying an entire old `public` directory over the updated repository. Back up the SillyTavern data directory and restore only the user data you actually need.
+The `main` branch is under active development and may change frequently. Avoid copying an entire old `public` directory over the updated repository. Back up the SillyTavern data directory and restore only the user data you actually need.
 
 ## Configuring background reflection
 
