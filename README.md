@@ -2,6 +2,8 @@
 
 **A community-maintained SillyTavern fork with a native, core-integrated agent harness.**
 
+> **You are reading the SillyAgent `main` branch.** This is the canonical branch for the fork's native harness and memory integration. The legacy `release` branch is retained separately and does not contain the complete SillyAgent core integration.
+
 > **SillyAgent is a fork of [SillyTavern](https://github.com/SillyTavern/SillyTavern).** It retains the upstream application as its foundation and adds fork-specific backend, lifecycle, and agent-runtime changes. This is an independent community fork, not an official SillyTavern release.
 
 SillyTavern continues to provide the conversation UI, provider integrations, and user-data environment. SillyAgent adds agent capabilities directly into the fork's backend and core conversation flow. It is **not a browser extension** and does not require installing a separate SillyTavern extension.
