@@ -56,6 +56,9 @@ beforeAll(async () => {
         request.user = { directories: userDirectories };
         next();
     });
+    app.post('/mock/v1/chat/completions', (_request, response) => {
+        response.json({ choices: [{ message: { content: 'SILLYAGENT_REFLECTION_OK' } }] });
+    });
     app.use('/api/agent/tools', router);
     server = app.listen(0, '127.0.0.1');
     await new Promise((resolve, reject) => {
@@ -80,6 +83,39 @@ afterAll(async () => {
 });
 
 describe('agent tools API', () => {
+    test('tests a draft reflection provider without saving it', async () => {
+        const endpoint = 'http://127.0.0.1:' + server.address().port + '/mock/v1/chat/completions';
+        const response = await postJson(baseUrl + '/memory/reflection-provider/test', {
+            endpoint,
+            model: 'mock-reflection-model',
+            secretKey: 'none',
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body.ok).toBe(true);
+        expect(body.model).toBe('mock-reflection-model');
+        expect(body.response).toBe('SILLYAGENT_REFLECTION_OK');
+        expect(body.matched).toBe(true);
+        await expect(fs.readFile(path.join(userRoot, 'sillyagent', 'reflection-provider.json')))
+            .rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    test('rejects an incomplete reflection provider test without saving settings', async () => {
+        const response = await postJson(baseUrl + '/memory/reflection-provider/test', {
+            endpoint: 'http://127.0.0.1:' + server.address().port + '/mock/v1/chat/completions',
+            model: '',
+            secretKey: 'none',
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(body.ok).toBe(false);
+        expect(body.error.code).toBe('reflection_provider_test_failed');
+        await expect(fs.readFile(path.join(userRoot, 'sillyagent', 'reflection-provider.json')))
+            .rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
     test('publishes roleplay and memory tool definitions', async () => {
         const response = await fetch(baseUrl);
         const body = await response.json();
