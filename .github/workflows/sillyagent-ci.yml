@@ -63,6 +63,7 @@ jobs:
           public/scripts/agent-runner.js
           public/scripts/openai.js
           public/scripts/tool-calling.js
+          public/scripts/util/openai-tool-calls.js
           public/scripts/sillyagent-memory.js
           public/scripts/sillyagent-memory-context.js
 
