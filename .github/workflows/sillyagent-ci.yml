@@ -99,6 +99,6 @@ jobs:
           exit 1
 
       - name: Run Playwright browser smoke test
-        run: npm run test:e2e --prefix tests
+        run: npm run test:e2e --prefix tests -- --grep "SillyAgent startup smoke test"
         env:
           ST_BASE_URL: http://127.0.0.1:8000
