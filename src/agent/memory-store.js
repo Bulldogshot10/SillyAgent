@@ -303,15 +303,19 @@ export class MemoryStore {
         }
         if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Event timestamp must be a non-negative integer.');
 
-        const deletedPartition = target.scope === 'chat'
+        const metadataCharacterId = typeof metadata?.characterId === 'string' ? metadata.characterId.trim() : '';
+        const deletedChat = target.scope === 'chat'
             ? this.#db.prepare('SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
-            : target.scope === 'character'
-                ? this.#db.prepare('SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
+            : null;
+        const deletedCharacter = target.scope === 'character'
+            ? this.#db.prepare('SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
+            : target.scope === 'chat' && metadataCharacterId
+                ? this.#db.prepare('SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(metadataCharacterId)
                 : null;
-        if (deletedPartition) {
-            const label = target.scope === 'chat' ? 'chat' : 'character';
-            const error = new Error('This ' + label + ' partition was deleted and cannot accept new memory events.');
-            error.code = target.scope === 'chat' ? 'chat_partition_deleted' : 'character_partition_deleted';
+        if (deletedChat || deletedCharacter) {
+            const characterOwnerDeleted = Boolean(deletedCharacter);
+            const error = new Error('This ' + (characterOwnerDeleted ? 'character' : 'chat') + ' partition was deleted and cannot accept new memory events.');
+            error.code = characterOwnerDeleted ? 'character_partition_deleted' : 'chat_partition_deleted';
             throw error;
         }
 
@@ -411,19 +415,23 @@ export class MemoryStore {
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
-            const deletedPartition = target.scope === 'chat'
+            const metadataCharacterId = typeof metadata?.characterId === 'string' ? metadata.characterId.trim() : '';
+            const deletedChat = target.scope === 'chat'
                 ? this.#db.prepare('SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
-                : target.scope === 'character'
-                    ? this.#db.prepare('SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
+                : null;
+            const deletedCharacter = target.scope === 'character'
+                ? this.#db.prepare('SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
+                : target.scope === 'chat' && metadataCharacterId
+                    ? this.#db.prepare('SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(metadataCharacterId)
                     : null;
-            if (deletedPartition) {
+            if (deletedChat || deletedCharacter) {
                 this.#db.exec('ROLLBACK;');
                 return {
                     memory: null,
                     duplicate: false,
                     forgotten: false,
                     deleted: true,
-                    deletedCharacter: target.scope === 'character',
+                    deletedCharacter: Boolean(deletedCharacter),
                     staleEvidence: false,
                     requiresReview: approvalRequired,
                 };
@@ -952,9 +960,15 @@ export class MemoryStore {
             const chatScopes = this.#db.prepare(
                 'SELECT DISTINCT scope_id FROM memory_events WHERE scope = \'chat\' ' +
                 'AND event_type IN (?, ?) AND json_extract(metadata_json, \'$.characterId\') = ? ' +
-                'UNION SELECT DISTINCT scope_id FROM memory_reflection_jobs WHERE character_id = ?',
-            ).all('chat.user_turn', 'chat.assistant_turn', target.scopeId, target.scopeId)
-                .map(row => row.scope_id);
+                'UNION SELECT DISTINCT scope_id FROM memory_reflection_jobs WHERE character_id = ? ' +
+                'UNION SELECT DISTINCT scope_id FROM memory_proposals WHERE scope = \'chat\' ' +
+                'AND json_extract(metadata_json, \'$.characterId\') = ? ' +
+                'UNION SELECT DISTINCT scope_id FROM memories WHERE scope = \'chat\' ' +
+                'AND json_extract(metadata_json, \'$.characterId\') = ?',
+            ).all(
+                'chat.user_turn', 'chat.assistant_turn', target.scopeId, target.scopeId,
+                target.scopeId, target.scopeId,
+            ).map(row => row.scope_id);
 
             let deletedEvents = 0;
             let deletedMemories = 0;
