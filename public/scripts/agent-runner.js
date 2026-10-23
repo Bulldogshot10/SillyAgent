@@ -114,7 +114,7 @@ export class SillyAgentRunner {
                 const modelToolCalls = this.#extractToolCalls(result.responseData);
                 if (!Array.isArray(modelToolCalls) || modelToolCalls.length === 0) {
                     notifyStop(stepType);
-                    return undefined;
+                    throw new Error('SillyAgent received a tool-call handoff, but could not normalize any executable tool calls. The provider may be returning an unsupported tool-call response format.');
                 }
 
                 const remainingCalls = this.#maxToolCalls - toolCallsExecuted;
