@@ -1293,7 +1293,7 @@ export class MemoryStore {
             const row = this.#db.prepare('SELECT * FROM memories WHERE id = ?').get(memoryId);
             if (!row) {
                 this.#db.exec('COMMIT;');
-            this.#checkpointAfterPurge();
+                this.#checkpointAfterPurge();
                 return false;
             }
 
