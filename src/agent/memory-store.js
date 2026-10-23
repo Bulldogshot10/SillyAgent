@@ -253,6 +253,10 @@ export class MemoryStore {
             'CREATE TABLE IF NOT EXISTS memory_deleted_chat_partitions (' +
             'scope_id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);',
         );
+        this.#db.exec(
+            'CREATE TABLE IF NOT EXISTS memory_deleted_character_partitions (' +
+            'scope_id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);',
+        );
         this.#db.exec('CREATE TABLE IF NOT EXISTS memory_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
         this.#db.exec(
             'CREATE TABLE IF NOT EXISTS memory_capture_keys (' +
@@ -299,11 +303,15 @@ export class MemoryStore {
         }
         if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw new TypeError('Event timestamp must be a non-negative integer.');
 
-        if (target.scope === 'chat' && this.#db.prepare(
-            'SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1',
-        ).get(target.scopeId)) {
-            const error = new Error('This chat partition was deleted and cannot accept new memory events.');
-            error.code = 'chat_partition_deleted';
+        const deletedPartition = target.scope === 'chat'
+            ? this.#db.prepare('SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
+            : target.scope === 'character'
+                ? this.#db.prepare('SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
+                : null;
+        if (deletedPartition) {
+            const label = target.scope === 'chat' ? 'chat' : 'character';
+            const error = new Error('This ' + label + ' partition was deleted and cannot accept new memory events.');
+            error.code = target.scope === 'chat' ? 'chat_partition_deleted' : 'character_partition_deleted';
             throw error;
         }
 
@@ -403,15 +411,19 @@ export class MemoryStore {
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
-            if (target.scope === 'chat' && this.#db.prepare(
-                'SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1',
-            ).get(target.scopeId)) {
+            const deletedPartition = target.scope === 'chat'
+                ? this.#db.prepare('SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
+                : target.scope === 'character'
+                    ? this.#db.prepare('SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1').get(target.scopeId)
+                    : null;
+            if (deletedPartition) {
                 this.#db.exec('ROLLBACK;');
                 return {
                     memory: null,
                     duplicate: false,
                     forgotten: false,
                     deleted: true,
+                    deletedCharacter: target.scope === 'character',
                     staleEvidence: false,
                     requiresReview: approvalRequired,
                 };
@@ -933,6 +945,10 @@ export class MemoryStore {
         const target = normalizeScope('character', characterId);
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
+            this.#db.prepare(
+                'INSERT INTO memory_deleted_character_partitions(scope_id, deleted_at) VALUES (?, ?) ' +
+                'ON CONFLICT(scope_id) DO UPDATE SET deleted_at = excluded.deleted_at',
+            ).run(target.scopeId, Date.now());
             const chatScopes = this.#db.prepare(
                 'SELECT DISTINCT scope_id FROM memory_events WHERE scope = \'chat\' ' +
                 'AND event_type IN (?, ?) AND json_extract(metadata_json, \'$.characterId\') = ? ' +
@@ -1021,6 +1037,26 @@ export class MemoryStore {
                 purgedChatPartitions: chatScopes.length,
                 purgedChatScopeIds: chatScopes,
             };
+        } catch (error) {
+            this.#db.exec('ROLLBACK;');
+            throw error;
+        }
+    }
+
+    /**
+     * Reactivate a character partition only after the owning character is present again.
+     * @param {string} characterId Character avatar identifier.
+     * @returns {{activated: boolean}} Whether a deletion tombstone was removed.
+     */
+    activateCharacterPartition(characterId) {
+        const target = normalizeScope('character', characterId);
+        this.#db.exec('BEGIN IMMEDIATE;');
+        try {
+            const result = this.#db.prepare(
+                'DELETE FROM memory_deleted_character_partitions WHERE scope_id = ?',
+            ).run(target.scopeId);
+            this.#db.exec('COMMIT;');
+            return { activated: result.changes > 0 };
         } catch (error) {
             this.#db.exec('ROLLBACK;');
             throw error;
@@ -1319,6 +1355,13 @@ export class MemoryStore {
                 this.#db.exec('COMMIT;');
                 return { event: null, duplicate: false, deleted: true };
             }
+            const characterId = typeof metadata?.characterId === 'string' ? metadata.characterId.trim() : '';
+            if (characterId && this.#db.prepare(
+                'SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1',
+            ).get(characterId)) {
+                this.#db.exec('COMMIT;');
+                return { event: null, duplicate: false, deleted: true, characterDeleted: true };
+            }
             const existing = this.#db.prepare(
                 'SELECT e.* FROM memory_capture_keys k INNER JOIN memory_events e ON e.id = k.event_id WHERE k.capture_key = ?',
             ).get(key);
@@ -1384,11 +1427,21 @@ export class MemoryStore {
 
         this.#db.exec('BEGIN IMMEDIATE;');
         try {
-            if (this.#db.prepare(
+            const deletedChat = this.#db.prepare(
                 'SELECT 1 FROM memory_deleted_chat_partitions WHERE scope_id = ? LIMIT 1',
-            ).get(target.scopeId)) {
+            ).get(target.scopeId);
+            const deletedCharacter = safeCharacterId ? this.#db.prepare(
+                'SELECT 1 FROM memory_deleted_character_partitions WHERE scope_id = ? LIMIT 1',
+            ).get(safeCharacterId) : null;
+            if (deletedChat || deletedCharacter) {
                 this.#db.exec('COMMIT;');
-                return { job: null, created: false, coalesced: false, deleted: true };
+                return {
+                    job: null,
+                    created: false,
+                    coalesced: false,
+                    deleted: true,
+                    deletedCharacter: Boolean(deletedCharacter),
+                };
             }
             const pending = this.#db.prepare(
                 'SELECT * FROM memory_reflection_jobs WHERE scope_id = ? AND character_id = ? AND mode = ? ' +
