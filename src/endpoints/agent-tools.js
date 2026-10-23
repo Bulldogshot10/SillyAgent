@@ -663,6 +663,20 @@ router.post('/capture-turn', async (request, response) => {
     const body = request.body ?? {};
     const activeChatId = getSafeContextId(body.activeChatId);
     const activeCharacterId = getSafeContextId(body.activeCharacterId);
+    const directories = request.user?.directories ?? { root: request.user?.directories?.root ?? globalThis.DATA_ROOT };
+    if (activeCharacterId && (!isExistingCharacter(directories, activeCharacterId)
+        || isAgentCharacterDeletionInProgress(directories, activeCharacterId))) {
+        return response.status(410).json({
+            ok: false,
+            error: { code: 'character_partition_deleted', message: 'SillyAgent rejected capture for a deleted character.' },
+        });
+    }
+    if (activeChatId && isAgentChatDeletionInProgress(directories, activeChatId, activeCharacterId)) {
+        return response.status(410).json({
+            ok: false,
+            error: { code: 'chat_partition_deleted', message: 'SillyAgent rejected capture while this chat is being deleted.' },
+        });
+    }
     if (!activeChatId || !['user', 'assistant'].includes(body.role)
         || typeof body.content !== 'string' || !body.content.trim()
         || body.content.length > 12000
@@ -677,6 +691,19 @@ router.post('/capture-turn', async (request, response) => {
         const store = await getMemoryStore(request);
         const settings = getEffectiveMemorySettings(store);
         if (!settings.autoCaptureEnabled) return response.json({ captured: false, disabled: true });
+        if (activeCharacterId && (!isExistingCharacter(directories, activeCharacterId)
+            || isAgentCharacterDeletionInProgress(directories, activeCharacterId))) {
+            return response.status(410).json({
+                ok: false,
+                error: { code: 'character_partition_deleted', message: 'SillyAgent rejected stale capture for a deleted character.' },
+            });
+        }
+        if (isAgentChatDeletionInProgress(directories, activeChatId, activeCharacterId)) {
+            return response.status(410).json({
+                ok: false,
+                error: { code: 'chat_partition_deleted', message: 'SillyAgent rejected stale capture for a deleted chat.' },
+            });
+        }
         const scopedChatId = getScopedChatId(activeChatId, activeCharacterId);
         const captureKey = createHash('sha256')
             .update((activeCharacterId ?? '') + '\0' + activeChatId + '\0' + body.role + '\0' + body.messageKey + '\0' + body.content)
@@ -689,9 +716,15 @@ router.post('/capture-turn', async (request, response) => {
             metadata: { characterId: activeCharacterId, messageKey: body.messageKey },
         });
         if (captured.deleted) {
+            const characterDeleted = captured.characterDeleted === true;
             return response.status(410).json({
                 ok: false,
-                error: { code: 'chat_partition_deleted', message: 'This chat was deleted. SillyAgent rejected a late capture request.' },
+                error: {
+                    code: characterDeleted ? 'character_partition_deleted' : 'chat_partition_deleted',
+                    message: characterDeleted
+                        ? 'This character was deleted. SillyAgent rejected a late capture request.'
+                        : 'This chat was deleted. SillyAgent rejected a late capture request.',
+                },
             });
         }
         const capturedCount = store.countCapturedTurns(scopedChatId);
@@ -716,6 +749,22 @@ router.post('/capture-turn', async (request, response) => {
 
 router.post('/execute', async (request, response) => {
     const body = request.body ?? {};
+    const directories = request.user?.directories ?? { root: request.user?.directories?.root ?? globalThis.DATA_ROOT };
+    const activeCharacterIdForGuard = getSafeContextId(body.activeCharacterId);
+    const activeChatIdForGuard = getSafeContextId(body.activeChatId);
+    if (activeCharacterIdForGuard && (!isExistingCharacter(directories, activeCharacterIdForGuard)
+        || isAgentCharacterDeletionInProgress(directories, activeCharacterIdForGuard))) {
+        return response.status(410).json({
+            ok: false,
+            error: { code: 'character_partition_deleted', message: 'SillyAgent rejected a tool call for a deleted character.' },
+        });
+    }
+    if (activeChatIdForGuard && isAgentChatDeletionInProgress(directories, activeChatIdForGuard, activeCharacterIdForGuard)) {
+        return response.status(410).json({
+            ok: false,
+            error: { code: 'chat_partition_deleted', message: 'SillyAgent rejected a tool call while this chat is being deleted.' },
+        });
+    }
     let requestBytes;
     try {
         requestBytes = Buffer.byteLength(JSON.stringify(body), 'utf8');
@@ -778,6 +827,22 @@ router.post('/execute', async (request, response) => {
     if (memoryWritesEnabled) allowedWriteToolsets.push('memory');
     if (skillWritesEnabled) allowedWriteToolsets.push('skills');
     if (roleplayStateWritesEnabled) allowedWriteToolsets.push('world', 'character', 'scene');
+
+    // Re-check after async store initialization. This is the last point before
+    // dispatch where we can reject a stale request without entering tool code.
+    if (activeCharacterIdForGuard && (!isExistingCharacter(directories, activeCharacterIdForGuard)
+        || isAgentCharacterDeletionInProgress(directories, activeCharacterIdForGuard))) {
+        return response.status(410).json({
+            ok: false,
+            error: { code: 'character_partition_deleted', message: 'SillyAgent rejected stale tool execution for a deleted character.' },
+        });
+    }
+    if (activeChatIdForGuard && isAgentChatDeletionInProgress(directories, activeChatIdForGuard, activeCharacterIdForGuard)) {
+        return response.status(410).json({
+            ok: false,
+            error: { code: 'chat_partition_deleted', message: 'SillyAgent rejected stale tool execution for a deleted chat.' },
+        });
+    }
 
     const result = await toolRegistry.executeTool(body.name, body.arguments, {
         allowedToolsets: ['roleplay', 'memory', 'skills', 'world', 'character', 'lore', 'scene'],
