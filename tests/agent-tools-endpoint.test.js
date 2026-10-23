@@ -5,6 +5,11 @@ import path from 'node:path';
 import express from 'express';
 
 import { router } from '../src/endpoints/agent-tools.js';
+import {
+    beginAgentChatDeletion,
+    endAgentChatDeletion,
+    deleteAgentChatPartitionIfPresent,
+} from '../src/agent/runtime.js';
 
 let server;
 let baseUrl;
@@ -310,6 +315,96 @@ describe('agent tools API', () => {
         expect(memory.content.length).toBeLessThanOrEqual(800);
         expect(memory.metadata).toBeUndefined();
         expect(memory.scopeId).toBeUndefined();
+    });
+
+    test('does not reactivate deleted chat partitions without a live source file', async () => {
+        const directories = {
+            root: userRoot,
+            characters: path.join(userRoot, 'characters'),
+            chats: path.join(userRoot, 'chats'),
+            groupChats: path.join(userRoot, 'groupChats'),
+        };
+        const characterId = 'harness-character.png';
+        const chatId = 'deleted-chat-reopen-test';
+        await deleteAgentChatPartitionIfPresent(directories, chatId, characterId);
+
+        const skipped = await postJson(baseUrl + '/memory/activate-chat', {
+            activeChatId: chatId,
+            activeCharacterId: characterId,
+        });
+        expect(skipped.status).toBe(200);
+        expect(await skipped.json()).toMatchObject({
+            ok: true,
+            activated: false,
+            skipped: 'chat_source_unavailable',
+        });
+
+        const rejectedCapture = await postJson(baseUrl + '/capture-turn', {
+            activeChatId: chatId,
+            activeCharacterId: characterId,
+            role: 'user',
+            content: 'This late request must stay rejected until the source chat exists.',
+            messageKey: 'late-turn',
+        });
+        expect(rejectedCapture.status).toBe(410);
+        expect(await rejectedCapture.json()).toMatchObject({
+            ok: false,
+            error: { code: 'chat_partition_deleted' },
+        });
+
+        const characterChatDirectory = path.join(directories.chats, 'harness-character');
+        await fs.mkdir(characterChatDirectory, { recursive: true });
+        await fs.writeFile(path.join(characterChatDirectory, chatId + '.jsonl'), '{}\n', 'utf8');
+
+        const reopened = await postJson(baseUrl + '/memory/activate-chat', {
+            activeChatId: chatId,
+            activeCharacterId: characterId,
+        });
+        expect(reopened.status).toBe(200);
+        expect(await reopened.json()).toMatchObject({
+            ok: true,
+            activated: true,
+            roleplayState: { activated: true },
+        });
+
+        const acceptedCapture = await postJson(baseUrl + '/capture-turn', {
+            activeChatId: chatId,
+            activeCharacterId: characterId,
+            role: 'user',
+            content: 'Capture from the reopened source chat is allowed.',
+            messageKey: 'reopened-turn',
+        });
+        expect(acceptedCapture.status).toBe(200);
+        expect(await acceptedCapture.json()).toMatchObject({ captured: true, duplicate: false });
+    });
+
+    test('rejects lifecycle activation while a chat deletion is in progress', async () => {
+        const directories = {
+            root: userRoot,
+            characters: path.join(userRoot, 'characters'),
+            chats: path.join(userRoot, 'chats'),
+            groupChats: path.join(userRoot, 'groupChats'),
+        };
+        const characterId = 'harness-character.png';
+        const chatId = 'deletion-in-progress-activation-test';
+        const chatDirectory = path.join(directories.chats, 'harness-character');
+        await fs.mkdir(chatDirectory, { recursive: true });
+        await fs.writeFile(path.join(chatDirectory, chatId + '.jsonl'), '{}\n', 'utf8');
+
+        beginAgentChatDeletion(directories, chatId, characterId);
+        try {
+            const response = await postJson(baseUrl + '/memory/activate-chat', {
+                activeChatId: chatId,
+                activeCharacterId: characterId,
+            });
+            expect(response.status).toBe(410);
+            expect(await response.json()).toMatchObject({
+                ok: false,
+                error: { code: 'chat_partition_deleted' },
+            });
+        } finally {
+            endAgentChatDeletion(directories, chatId, characterId);
+        }
     });
 
     test('rejects invalid inputs and unknown tools', async () => {
