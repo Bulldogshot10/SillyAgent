@@ -1,0 +1,19 @@
+SillyAgent project notice
+=========================
+
+SillyAgent is a community-maintained fork of SillyTavern.
+
+Upstream project:
+  SillyTavern
+  https://github.com/SillyTavern/SillyTavern
+  https://docs.sillytavern.app/
+
+This repository retains and modifies upstream SillyTavern code and adds the SillyAgent native, core-integrated runtime. Copyright in upstream contributions remains with their respective holders. Copyright and license notices already present in upstream files are intended to remain intact; this notice supplements those notices and does not replace them.
+
+License for this repository:
+  GNU Affero General Public License, version 3 (AGPL-3.0)
+  See the accompanying LICENSE file.
+
+This is an independent fork. It is not an official SillyTavern release and is not affiliated with or endorsed by the upstream SillyTavern project.
+
+Third-party runtime and development packages are enumerated in THIRD_PARTY_NOTICES.md from package-lock.json. Refer to each package's own license text and source distribution for its complete licensing terms.
