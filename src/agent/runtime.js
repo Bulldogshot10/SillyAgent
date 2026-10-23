@@ -149,35 +149,6 @@ export async function withAgentCharacterPartitionLock(input, characterId, operat
  * @param {string} characterId Character avatar identifier.
  * @returns {Promise<object>} Tombstone activation results.
  */
-export async function activateAgentCharacterPartitionsIfPresent(input, characterId) {
-    const { directories, root } = normalizeDirectories(input);
-    if (typeof characterId !== 'string' || !characterId.trim() || characterId.length > 256) {
-        throw new TypeError('A valid character ID is required to activate SillyAgent character state.');
-    }
-    const normalizedCharacterId = characterId.trim();
-    const memoryDatabasePath = path.join(root, 'sillyagent', 'memory.sqlite');
-    const stateDatabasePath = path.join(root, 'sillyagent', 'roleplay-state.sqlite');
-    const skillPartition = createHash('sha256').update(normalizedCharacterId, 'utf8').digest('hex');
-    const skillDatabasePath = path.join(root, 'sillyagent', 'skills', skillPartition + '.sqlite');
-
-    let memory = null;
-    let roleplayState = null;
-    let skills = null;
-    if (memoryStores.has(memoryDatabasePath) || existsSync(memoryDatabasePath)) {
-        const store = await getAgentMemoryStore({ ...directories, root }, { startWorker: false });
-        memory = store.activateCharacterPartition(normalizedCharacterId);
-    }
-    if (roleplayStateStores.has(stateDatabasePath) || existsSync(stateDatabasePath)) {
-        const store = await getAgentRoleplayStateStore({ ...directories, root });
-        roleplayState = store.activateCharacterPartition(normalizedCharacterId);
-    }
-    if (skillStores.has(skillDatabasePath) || existsSync(skillDatabasePath)) {
-        const store = await getAgentSkillStore({ ...directories, root }, normalizedCharacterId);
-        skills = store.activateCharacterPartition();
-    }
-    return { memory, roleplayState, skills };
-}
-
 export async function getAgentMemoryStore(input, { startWorker = true } = {}) {
     const { directories, root } = normalizeDirectories(input);
     const databasePath = path.join(root, 'sillyagent', 'memory.sqlite');
