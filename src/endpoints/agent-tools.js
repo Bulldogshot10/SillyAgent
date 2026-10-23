@@ -1,7 +1,18 @@
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
+import sanitize from 'sanitize-filename';
 
-import { getAgentMemoryStore, getAgentRoleplayStateStore, getAgentScopedChatId, getAgentSkillStore } from '../agent/runtime.js';
+import {
+    activateAgentCharacterPartitionsIfPresent,
+    getAgentMemoryStore,
+    getAgentRoleplayStateStore,
+    getAgentScopedChatId,
+    getAgentSkillStore,
+    isAgentChatDeletionInProgress,
+    isAgentCharacterDeletionInProgress,
+} from '../agent/runtime.js';
 import { getReflectionProviderState, saveReflectionProviderConfig } from '../agent/reflection-provider.js';
 import { registerBuiltinTools } from '../agent/builtin-tools.js';
 import { registerSkillTools } from '../agent/skill-tools.js';
@@ -24,6 +35,30 @@ function getSafeContextId(value) {
 
 function getScopedChatId(chatId, characterId) {
     return getAgentScopedChatId(getSafeContextId(chatId), getSafeContextId(characterId));
+}
+
+function isExistingCharacter(directories, characterId) {
+    if (!characterId) return true;
+    if (!directories?.characters || sanitize(characterId) !== characterId) return false;
+    return fs.existsSync(path.join(directories.characters, characterId));
+}
+
+function getChatSourcePath(directories, chatId, characterId) {
+    if (!directories || !chatId || sanitize(chatId) !== chatId) return null;
+    const filename = sanitize(chatId + '.jsonl');
+    if (filename !== chatId + '.jsonl') return null;
+    if (characterId) {
+        if (!isExistingCharacter(directories, characterId) || !directories.chats) return null;
+        const directoryName = sanitize(characterId.replace(/\.png$/iu, ''));
+        return path.join(directories.chats, directoryName, filename);
+    }
+    if (!directories.groupChats) return null;
+    return path.join(directories.groupChats, filename);
+}
+
+function isExistingChatSource(directories, chatId, characterId) {
+    const sourcePath = getChatSourcePath(directories, chatId, characterId);
+    return Boolean(sourcePath && fs.existsSync(sourcePath));
 }
 function getSafeWorldNames(value) {
     if (!Array.isArray(value)) return [];
@@ -570,19 +605,55 @@ router.post('/memory/activate-chat', async (request, response) => {
     const rawChatId = getSafeContextId(request.body?.activeChatId);
     const activeCharacterId = getSafeContextId(request.body?.activeCharacterId);
     const scopedChatId = getScopedChatId(rawChatId, activeCharacterId);
+    const directories = request.user?.directories ?? { root: request.user?.directories?.root ?? globalThis.DATA_ROOT };
     if (!scopedChatId) {
         return response.status(400).json({
             ok: false,
             error: { code: 'missing_chat_id', message: 'Reactivating memory capture requires an active chat.' },
         });
     }
+    if (!isExistingCharacter(directories, activeCharacterId)
+        || isAgentCharacterDeletionInProgress(directories, activeCharacterId)) {
+        return response.status(410).json({
+            ok: false,
+            error: { code: 'character_partition_deleted', message: 'SillyAgent rejected activation for a deleted character.' },
+        });
+    }
+    if (isAgentChatDeletionInProgress(directories, rawChatId, activeCharacterId)) {
+        return response.status(410).json({
+            ok: false,
+            error: { code: 'chat_partition_deleted', message: 'SillyAgent rejected activation while this chat is being deleted.' },
+        });
+    }
     try {
         const store = await getMemoryStore(request);
-        const directories = request.user?.directories ?? { root: request.user?.directories?.root ?? globalThis.DATA_ROOT };
         const roleplayStateStore = await getAgentRoleplayStateStore(directories);
+        const characterActivation = activeCharacterId
+            ? await activateAgentCharacterPartitionsIfPresent(directories, activeCharacterId)
+            : null;
+
+        // The check happens after all async initialization and immediately before the
+        // synchronous transaction, so an old lifecycle request cannot undo a deletion.
+        if (!isExistingCharacter(directories, activeCharacterId)
+            || isAgentCharacterDeletionInProgress(directories, activeCharacterId)) {
+            return response.status(410).json({
+                ok: false,
+                error: { code: 'character_partition_deleted', message: 'SillyAgent rejected stale character activation.' },
+            });
+        }
+        if (isAgentChatDeletionInProgress(directories, rawChatId, activeCharacterId)
+            || !isExistingChatSource(directories, rawChatId, activeCharacterId)) {
+            return response.json({ ok: true, activated: false, skipped: 'chat_source_unavailable', character: characterActivation });
+        }
+
         const memoryActivation = store.activateChatPartition(scopedChatId);
         const roleplayActivation = roleplayStateStore.activateChatPartition(scopedChatId);
-        return response.json({ ok: true, ...memoryActivation, roleplayState: roleplayActivation });
+        return response.json({
+            ok: true,
+            ...memoryActivation,
+            roleplayState: roleplayActivation,
+            character: characterActivation,
+        });
     } catch (error) {
         return sendMemoryError(response, error);
     }
