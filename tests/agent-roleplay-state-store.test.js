@@ -111,6 +111,38 @@ describe('RoleplayStateStore', () => {
         expect(third.state.lastResolvedThreads).toEqual([]);
     });
 
+    test('rejects stale chat-state writes after deletion until the chat is reopened', async () => {
+        store = await RoleplayStateStore.open(':memory:');
+        const scopeId = 'deleted-scene-scope';
+
+        store.updateState({
+            stateType: 'scene',
+            scopeId,
+            patch: { summary: 'State before deletion' },
+            expectedVersion: 0,
+        });
+        store.deleteChatPartition(scopeId);
+
+        expect(() => store.updateState({
+            stateType: 'scene',
+            scopeId,
+            patch: { summary: 'Late tool write after deletion' },
+            expectedVersion: 0,
+        })).toThrow(expect.objectContaining({ code: 'state_conflict' }));
+        expect(store.getState({ stateType: 'scene', scopeId })).toMatchObject({
+            version: 0,
+            state: {},
+        });
+
+        expect(store.activateChatPartition(scopeId)).toEqual({ activated: true });
+        expect(store.updateState({
+            stateType: 'scene',
+            scopeId,
+            patch: { summary: 'State after reopening' },
+            expectedVersion: 0,
+        }).state).toEqual({ summary: 'State after reopening' });
+    });
+
     test('removes chat-owned scene and fallback world state without deleting shared or character state', async () => {
         store = await RoleplayStateStore.open(':memory:');
         store.updateState({
